@@ -19,7 +19,7 @@ Home Assistant custom integration that renames entity IDs and rewrites all consu
 ## Commands
 
 - Tests: `pytest` (engine tests need no HA; HA tests use `pytest-homeassistant-custom-component`).
-- Panel component tests: `node --test tests/panel` (no build chain, no dependencies).
+- Panel component tests: `node --test "tests/panel/*.test.mjs"` (no build chain, no dependencies).
 - Lint and types: `ruff check .` and `mypy custom_components`.
 
 ## Working with the plan

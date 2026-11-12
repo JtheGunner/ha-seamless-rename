@@ -1,7 +1,7 @@
 {
   "domain": "entity_rename_safe",
   "name": "Entity Rename Safe",
-  "after_dependencies": ["frontend", "panel_custom"],
+  "after_dependencies": ["frontend", "lovelace", "panel_custom"],
   "codeowners": ["@JtheGunner"],
   "config_flow": true,
   "dependencies": ["http", "websocket_api"],

@@ -212,7 +212,7 @@ and offers to undo the half-finished rename.
 ```bash
 uv sync
 uv run pytest                 # Python tests (engine tests need no Home Assistant)
-node --test tests/panel       # panel component tests
+node --test "tests/panel/*.test.mjs"   # panel component tests
 uv run ruff check . && uv run ruff format --check .
 uv run mypy custom_components
 ```
