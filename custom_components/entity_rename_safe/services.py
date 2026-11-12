@@ -71,6 +71,9 @@ async def _plan(call: ServiceCall) -> dict[str, Any]:
         "blockers": result.blockers,
         "warnings": result.warnings,
         "summary": result.summary,
+        "external": [
+            {"path": hit.path, "line": hit.line, "text": hit.text} for hit in result.external
+        ],
     }
 
 

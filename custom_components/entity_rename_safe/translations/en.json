@@ -67,5 +67,22 @@
         }
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "External search folders",
+        "description": "Folders outside the Home Assistant configuration (Node-RED, pyscript, AppDaemon, Grafana, ...) that are searched for the old entity IDs. Hits are only reported, never changed.",
+        "data": {
+          "external_paths": "Folders"
+        },
+        "data_description": {
+          "external_paths": "Absolute folder paths, one per entry."
+        }
+      }
+    },
+    "error": {
+      "invalid_path": "Every path must be absolute."
+    }
   }
 }

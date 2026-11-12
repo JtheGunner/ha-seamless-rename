@@ -67,5 +67,22 @@
         }
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Externe Suchordner",
+        "description": "Ordner außerhalb der Home-Assistant-Konfiguration (Node-RED, pyscript, AppDaemon, Grafana, ...), die nach den alten Entity-IDs durchsucht werden. Treffer werden nur gemeldet, nie geändert.",
+        "data": {
+          "external_paths": "Ordner"
+        },
+        "data_description": {
+          "external_paths": "Absolute Ordnerpfade, einer pro Eintrag."
+        }
+      }
+    },
+    "error": {
+      "invalid_path": "Jeder Pfad muss absolut sein."
+    }
   }
 }

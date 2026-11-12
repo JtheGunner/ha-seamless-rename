@@ -5,9 +5,13 @@ import hashlib
 import os
 import stat
 import tempfile
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
+
+from ..const import EXTERNAL_SKIP_DIRS, MAX_EXTERNAL_FILE_BYTES, MAX_EXTERNAL_HITS
+from ..engine.ids import build_token_pattern
 
 _YAML_SUFFIXES = (".yaml", ".yml")
 _NEW_FILE_MODE = 0o644
@@ -87,3 +91,56 @@ def write_atomic(path: Path, data: bytes) -> None:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(temp_name)
         raise
+
+
+_BINARY_PROBE = 8192
+_MAX_SNIPPET = 200
+
+
+@dataclass(frozen=True)
+class ExternalHit:
+    """A line in an external file that mentions an old entity ID. Reported, never edited."""
+
+    path: str
+    line: int
+    text: str
+
+
+def scan_external(
+    paths: Collection[str], mapping: Mapping[str, str]
+) -> tuple[list[ExternalHit], list[str]]:
+    """Search the given folders for the old IDs in plain text; return hits and warnings.
+
+    Nothing is ever written. Binary files, oversized files and tool folders (``.git``,
+    ``node_modules``, ...) are skipped, symlinks are not followed, and the result is capped.
+    """
+    pattern = build_token_pattern(mapping)
+    hits: list[ExternalHit] = []
+    warnings: list[str] = []
+    for configured in paths:
+        root = Path(configured)
+        if not root.is_dir():
+            warnings.append(f"external path {configured} is not a folder and was skipped")
+            continue
+        for directory, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = sorted(name for name in dirnames if name not in EXTERNAL_SKIP_DIRS)
+            for name in sorted(filenames):
+                file = Path(directory) / name
+                try:
+                    if file.is_symlink() or file.stat().st_size > MAX_EXTERNAL_FILE_BYTES:
+                        continue
+                    data = file.read_bytes()
+                except OSError as error:
+                    warnings.append(f"external file {file} could not be read ({error})")
+                    continue
+                if b"\0" in data[:_BINARY_PROBE]:
+                    continue
+                for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+                    if pattern.search(line):
+                        hits.append(ExternalHit(str(file), number, line.strip()[:_MAX_SNIPPET]))
+                        if len(hits) >= MAX_EXTERNAL_HITS:
+                            warnings.append(
+                                f"more than {MAX_EXTERNAL_HITS} external hits; the list is cut off"
+                            )
+                            return hits, warnings
+    return hits, warnings
