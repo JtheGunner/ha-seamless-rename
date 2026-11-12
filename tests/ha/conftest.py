@@ -9,7 +9,7 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.check_config import HomeAssistantConfig
 
-CHECK_PATH = "custom_components.entity_rename_safe.ha.api.async_check_ha_config_file"
+CHECK_PATH = "custom_components.seamless_rename.ha.api.async_check_ha_config_file"
 
 
 @pytest.fixture

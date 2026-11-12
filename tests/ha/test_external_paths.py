@@ -4,14 +4,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.entity_rename_safe.const import (
+from custom_components.seamless_rename.const import (
     CONF_EXTERNAL_PATHS,
     DOMAIN,
     MAX_EXTERNAL_HITS,
 )
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha import api
-from custom_components.entity_rename_safe.ha.api import PlanRequest
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha import api
+from custom_components.seamless_rename.ha.api import PlanRequest
 
 from .conftest import add_entity
 
@@ -140,7 +140,7 @@ async def test_symlinks_fifos_oversized_and_secret_files_are_not_read(
 ) -> None:
     import os
 
-    from custom_components.entity_rename_safe.const import MAX_EXTERNAL_FILE_BYTES
+    from custom_components.seamless_rename.const import MAX_EXTERNAL_FILE_BYTES
 
     add_entity(hass, "sensor.foo")
     outside = tmp_path / "outside"

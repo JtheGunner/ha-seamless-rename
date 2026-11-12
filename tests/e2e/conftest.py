@@ -39,7 +39,7 @@ def ha(e2e_config_dir: Path) -> Iterator[harness.HaClient]:
     enable_socket()
     with harness.running_container(IMAGE, e2e_config_dir, _free_port()) as client:
         flow = client.request(
-            "POST", "/api/config/config_entries/flow", {"handler": "entity_rename_safe"}
+            "POST", "/api/config/config_entries/flow", {"handler": "seamless_rename"}
         )
         assert flow["type"] == "create_entry", flow
         yield client

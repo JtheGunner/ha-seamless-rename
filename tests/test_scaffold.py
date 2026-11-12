@@ -4,12 +4,12 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.entity_rename_safe.const import DEFAULT_EXCLUDES, DOMAIN, WORK_DIR_NAME
+from custom_components.seamless_rename.const import DEFAULT_EXCLUDES, DOMAIN, WORK_DIR_NAME
 
 
 def test_domain_constants() -> None:
-    assert DOMAIN == "entity_rename_safe"
-    assert WORK_DIR_NAME == ".entity_rename_safe"
+    assert DOMAIN == "seamless_rename"
+    assert WORK_DIR_NAME == ".seamless_rename"
     for excluded in (".storage", ".git", "custom_components", "secrets.yaml"):
         assert excluded in DEFAULT_EXCLUDES
 

@@ -3,9 +3,9 @@ from pathlib import Path
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha import api
-from custom_components.entity_rename_safe.ha.api import PlanRequest
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha import api
+from custom_components.seamless_rename.ha.api import PlanRequest
 
 from .conftest import add_entity
 
@@ -74,7 +74,7 @@ async def test_apply_leaves_excluded_findings_untouched(
     text = target.read_text()
     assert "entity_id: sensor.bar" in text
     assert "states('sensor.foo')" in text
-    manifest = next((config_dir / ".entity_rename_safe" / "backups").glob("*/manifest.json"))
+    manifest = next((config_dir / ".seamless_rename" / "backups").glob("*/manifest.json"))
     assert likely["finding_id"] in manifest.read_text()
     undone = await api.undo(hass, result.apply_id)
     assert undone.status == "undone"

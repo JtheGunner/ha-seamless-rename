@@ -32,5 +32,5 @@ python_version = "3.14"
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = "custom_components.entity_rename_safe.engine.*"
+module = "custom_components.seamless_rename.engine.*"
 strict = true

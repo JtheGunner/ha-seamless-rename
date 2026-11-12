@@ -10,11 +10,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 
-from custom_components.entity_rename_safe.const import WORK_DIR_NAME
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha import api, lovelace
-from custom_components.entity_rename_safe.ha.api import PlanRequest
-from custom_components.entity_rename_safe.ha.lovelace import AdapterUnavailable, DashboardRef
+from custom_components.seamless_rename.const import WORK_DIR_NAME
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha import api, lovelace
+from custom_components.seamless_rename.ha.api import PlanRequest
+from custom_components.seamless_rename.ha.lovelace import AdapterUnavailable, DashboardRef
 
 from .conftest import add_entity
 

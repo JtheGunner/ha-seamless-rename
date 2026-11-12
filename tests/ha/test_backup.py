@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha.backup import (
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha.backup import (
     FileRecord,
     Manifest,
     create_backup,
@@ -12,7 +12,7 @@ from custom_components.entity_rename_safe.ha.backup import (
     restore_files,
     write_manifest,
 )
-from custom_components.entity_rename_safe.ha.files import sha256_of
+from custom_components.seamless_rename.ha.files import sha256_of
 
 
 def _manifest(paths: list[Path]) -> Manifest:

@@ -20,7 +20,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SAMPLE_CONFIG = Path(__file__).parent / "sample_config"
-INTEGRATION = REPO_ROOT / "custom_components" / "entity_rename_safe"
+INTEGRATION = REPO_ROOT / "custom_components" / "seamless_rename"
 CLIENT_ID = "http://localhost:8123/"
 STARTUP_TIMEOUT = 300.0
 
@@ -126,7 +126,7 @@ def _wait_until_up(client: HaClient) -> None:
 @contextmanager
 def running_container(image: str, config_dir: Path, port: int) -> Iterator[HaClient]:
     """Run the image against ``config_dir`` and yield a client with a valid token."""
-    name = f"entity-rename-safe-e2e-{uuid.uuid4().hex[:8]}"
+    name = f"seamless-rename-e2e-{uuid.uuid4().hex[:8]}"
     _docker(
         "run", "-d", "--name", name,
         "-p", f"127.0.0.1:{port}:8123",
@@ -153,7 +153,7 @@ def prepare_config(target: Path) -> None:
     shutil.copytree(SAMPLE_CONFIG, target, dirs_exist_ok=True)
     shutil.copytree(
         INTEGRATION,
-        target / "custom_components" / "entity_rename_safe",
+        target / "custom_components" / "seamless_rename",
         ignore=shutil.ignore_patterns("__pycache__"),
         dirs_exist_ok=True,
     )

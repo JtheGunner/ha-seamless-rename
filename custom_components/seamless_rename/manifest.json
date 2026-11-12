@@ -1,5 +1,5 @@
 {
-  "domain": "entity_rename_safe",
+  "domain": "seamless_rename",
   "name": "Seamless Rename",
   "after_dependencies": ["frontend", "lovelace", "panel_custom"],
   "codeowners": ["@JtheGunner"],

@@ -3,7 +3,7 @@ from pathlib import Path
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
-from custom_components.entity_rename_safe.const import DOMAIN
+from custom_components.seamless_rename.const import DOMAIN
 
 from .conftest import add_entity
 
@@ -103,7 +103,7 @@ async def test_history_skips_unreadable_manifest(
     hass: HomeAssistant, hass_ws_client, config_dir: Path
 ) -> None:
     assert await async_setup_component(hass, DOMAIN, {})
-    broken = config_dir / ".entity_rename_safe" / "backups" / "x"
+    broken = config_dir / ".seamless_rename" / "backups" / "x"
     broken.mkdir(parents=True)
     (broken / "manifest.json").write_text("not json")
     client = await hass_ws_client(hass)
