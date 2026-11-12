@@ -29,6 +29,7 @@ from ..engine.planner import (
 )
 from ..engine.rewrite import apply_edits
 from ..engine.yaml_scan import scan_yaml
+from . import helpers
 from .backup import (
     FileRecord,
     Manifest,
@@ -122,6 +123,7 @@ class ApplyResult:
     status: str
     changed_files: list[str] = field(default_factory=list)
     changed_dashboards: list[str] = field(default_factory=list)
+    changed_helpers: list[str] = field(default_factory=list)
     restart_required: bool = False
     warnings: list[str] = field(default_factory=list)
 
@@ -244,9 +246,17 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
         diff += render_diff(
             f"lovelace/{edit.ref.label}.json", render_config(edit.config), render_config(new_config)
         )
+    helper_plans, helper_warnings = await helpers.scan_helpers(hass, mapping)
+    for helper in helper_plans:
+        new_options = rewrite_json(helper.options, helper.findings, set(DEFAULT_REPLACE))
+        diff += render_diff(
+            f"helpers/{helper.domain}-{helper.entry_id}.json",
+            render_config(helper.options),
+            render_config(new_options),
+        )
 
     plan_id = f"plan-{uuid.uuid4().hex[:12]}"
-    warnings = [*preflight.warnings, *scan_warnings, *dashboard_warnings]
+    warnings = [*preflight.warnings, *scan_warnings, *dashboard_warnings, *helper_warnings]
     summary: dict[str, Any] = {
         "files": {
             relative: {
@@ -262,6 +272,13 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
             }
             for edit in dashboard_edits
         },
+        "helpers": {
+            f"{plan.domain}:{plan.entry_id}": {
+                level.value: sum(1 for item in plan.findings if item.confidence is level)
+                for level in Confidence
+            }
+            for plan in helper_plans
+        },
         "renames": len(renames),
     }
     payload: dict[str, Any] = {
@@ -271,6 +288,15 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
         "replace": [level.value for level in DEFAULT_REPLACE],
         "base_hashes": hashes,
         "findings": {rel: [asdict(item) for item in items] for rel, items in findings.items()},
+        "helpers": [
+            {
+                "entry_id": plan.entry_id,
+                "domain": plan.domain,
+                "base_hash": plan.base_hash,
+                "findings": [asdict(item) for item in plan.findings],
+            }
+            for plan in helper_plans
+        ],
         "lovelace": [
             {
                 "url_path": edit.ref.url_path,
@@ -298,6 +324,20 @@ def _is_safe_relative(relative: str) -> bool:
     )
 
 
+def _validate_plan_shape(plan_id: str, payload: dict[str, Any]) -> None:
+    """Reject a plan whose dashboard or helper entries lack the fields apply relies on."""
+    required = {
+        "lovelace": ("url_path", "base_hash", "findings"),
+        "helpers": ("entry_id", "domain", "base_hash", "findings"),
+    }
+    for section, keys in required.items():
+        entries = payload[section]
+        if not isinstance(entries, list) or not all(
+            isinstance(entry, dict) and all(key in entry for key in keys) for entry in entries
+        ):
+            raise PlanStale(f"plan {plan_id} has a malformed '{section}' section")
+
+
 def _load_plan(work_dir: Path, plan_id: str) -> dict[str, Any]:
     _check_id(plan_id, "plan")
     path = work_dir / "plans" / f"{plan_id}.json"
@@ -315,11 +355,13 @@ def _load_plan(work_dir: Path, plan_id: str) -> dict[str, Any]:
             "findings",
             "base_hashes",
             "lovelace",
+            "helpers",
         ):
             if key not in payload:
                 raise PlanStale(f"plan {plan_id} is incomplete: '{key}' is missing")
     except (OSError, ValueError, AttributeError) as error:
         raise PlanStale(f"plan {plan_id} could not be read: {error}") from error
+    _validate_plan_shape(plan_id, payload)
     unsafe = [
         rel for rel in (*payload["base_hashes"], *payload["findings"]) if not _is_safe_relative(rel)
     ]
@@ -428,6 +470,46 @@ def _write_snapshots(backup_dir: Path, changes: list[_DashboardChange]) -> list[
     return [write_snapshot(backup_dir, c.ref, c.before, c.after) for c in changes]
 
 
+@dataclass(frozen=True)
+class _HelperSnapshot:
+    entry_id: str
+    domain: str
+    before: dict[str, Any]
+
+
+def _prepare_helpers(hass: HomeAssistant, entries: list[dict[str, Any]]) -> list[_HelperSnapshot]:
+    """Verify each planned helper entry is unchanged and capture its options."""
+    snapshots: list[_HelperSnapshot] = []
+    for entry in entries:
+        try:
+            options, digest = helpers.current_options(hass, entry["entry_id"])
+        except AdapterUnavailable as error:
+            raise PlanStale(
+                f"helper {entry['entry_id']} cannot be read: {error}; plan again"
+            ) from error
+        if digest != entry["base_hash"]:
+            raise PlanStale(
+                f"helper {entry['entry_id']} changed since the plan was created; plan again"
+            )
+        snapshots.append(_HelperSnapshot(entry["entry_id"], entry["domain"], options))
+    return snapshots
+
+
+def _write_helper_snapshots(
+    backup_dir: Path, snapshots: list[_HelperSnapshot], after: dict[str, dict[str, Any]]
+) -> list[str]:
+    return [
+        helpers.write_snapshot(
+            backup_dir,
+            snap.entry_id,
+            snap.domain,
+            snap.before,
+            after.get(snap.entry_id, snap.before),
+        )
+        for snap in snapshots
+    ]
+
+
 async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     """Apply a stored plan: back up, rewrite files, check config, rename, reload."""
     work_dir = _work_dir(hass)
@@ -441,6 +523,7 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     await hass.async_add_executor_job(_verify_base, config_dir, payload["base_hashes"])
 
     renames = [Rename(item["from"], item["to"]) for item in payload["renames"]]
+    mapping = {rename.from_id: rename.to_id for rename in renames}
     ordered = order_renames(renames)
     _reject_taken_temp_ids(hass, renames, ordered)
     findings = {
@@ -451,6 +534,7 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     new_texts, _ = await hass.async_add_executor_job(_render_all, config_dir, findings, replace)
     changed = sorted(new_texts)
     dashboards = await _prepare_dashboards(hass, payload["lovelace"], replace)
+    helper_snapshots = _prepare_helpers(hass, payload["helpers"])
 
     root = config_dir.resolve()
     apply_id = f"apply-{dt_util.utcnow():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
@@ -472,19 +556,31 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
         manifest.snapshots = await hass.async_add_executor_job(
             _write_snapshots, backup_dir, dashboards
         )
+    if helper_snapshots:
+        manifest.snapshots += await hass.async_add_executor_job(
+            _write_helper_snapshots, backup_dir, helper_snapshots, {}
+        )
     await hass.async_add_executor_job(write_manifest, backup_dir, manifest)
 
     done: list[Rename] = []
     saved: list[_DashboardChange] = []
+    edited_helpers: list[tuple[str, dict[str, Any]]] = []
+    extra_helpers: list[str] = []
     files_written = False
 
     async def roll_back() -> list[str]:
-        problems = _undo_registry(hass, done)
+        problems: list[str] = []
+        for entry_id, options_before in reversed(edited_helpers):
+            try:
+                helpers.set_options(hass, entry_id, options_before)
+            except AdapterUnavailable as error:
+                problems.append(f"helper {entry_id} could not be restored: {error}")
         for change in reversed(saved):
             try:
                 await save_dashboard(hass, change.ref, change.before)
             except AdapterUnavailable as error:
                 problems.append(f"dashboard {change.ref.label} could not be restored: {error}")
+        problems += _undo_registry(hass, done)
         if files_written and manifest.files:
             try:
                 await hass.async_add_executor_job(restore_files, manifest, backup_dir)
@@ -508,6 +604,24 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
         for change in dashboards:
             await save_dashboard(hass, change.ref, change.after)
             saved.append(change)
+        if helper_snapshots:
+            planned = {snap.entry_id for snap in helper_snapshots}
+            fresh = await helpers.scan_entries(hass, mapping)
+            extra = [
+                plan.entry_id for plan in fresh if plan.findings and plan.entry_id not in planned
+            ]
+            extra_helpers.extend(extra)
+            await helpers.apply_entry_edits(
+                hass, [plan for plan in fresh if plan.entry_id in planned], replace, edited_helpers
+            )
+        helper_after = {
+            snap.entry_id: helpers.current_options(hass, snap.entry_id)[0]
+            for snap in helper_snapshots
+        }
+        if helper_snapshots:
+            await hass.async_add_executor_job(
+                _write_helper_snapshots, backup_dir, helper_snapshots, helper_after
+            )
         after = await hass.async_add_executor_job(_hash_files, config_dir, changed)
         for record in manifest.files:
             record.sha256_after = after[Path(record.path).relative_to(root).as_posix()]
@@ -528,6 +642,10 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     except Exception as error:  # noqa: BLE001 - the change itself is already in place
         warnings.append(f"reload failed, restart Home Assistant: {error}")
         needs_restart = True
+    warnings.extend(
+        f"helper {entry_id} references a renamed entity but was not in the plan; plan again"
+        for entry_id in extra_helpers
+    )
     known = registry_entity_ids(hass)
     warnings.extend(
         f"{rename.to_id} is missing from the entity registry after the apply"
@@ -539,6 +657,7 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
         "completed",
         changed,
         [change.ref.label for change in dashboards],
+        [entry_id for entry_id, _ in edited_helpers],
         needs_restart,
         warnings,
     )
@@ -553,16 +672,26 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
         raise UndoRefused(
             f"apply {apply_id} has status {manifest.status}; only completed applies can be undone"
         )
+    unknown_names = [n for n in manifest.snapshots if not n.startswith(("dashboards/", "helpers/"))]
+    if unknown_names:
+        raise UndoRefused(f"manifest names unknown snapshots: {unknown_names}")
     try:
         snapshots = [
             await hass.async_add_executor_job(read_snapshot, backup_dir, name)
             for name in manifest.snapshots
+            if name.startswith("dashboards/")
+        ]
+        helper_snaps = [
+            await hass.async_add_executor_job(helpers.read_snapshot, backup_dir, name)
+            for name in manifest.snapshots
+            if name.startswith("helpers/")
         ]
     except ValueError as error:
         raise UndoRefused(str(error)) from error
     if not force:
         changed = await hass.async_add_executor_job(_changed_since, manifest)
         changed += await _dashboards_changed_since(hass, snapshots)
+        changed += _helpers_changed_since(hass, helper_snaps)
         if changed:
             raise UndoRefused(
                 f"changed since the apply: {', '.join(changed)}; use force to overwrite"
@@ -570,7 +699,11 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
     back = order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames])
     done: list[Rename] = []
     restored: list[dict[str, Any]] = []
+    restored_helpers: list[dict[str, Any]] = []
     try:
+        for snap in helper_snaps:
+            helpers.set_options(hass, snap["entry_id"], snap["before"])
+            restored_helpers.append(snap)
         for snapshot in snapshots:
             await save_dashboard(hass, DashboardRef(snapshot["url_path"]), snapshot["before"])
             restored.append(snapshot)
@@ -584,6 +717,11 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
                 await save_dashboard(hass, DashboardRef(snapshot["url_path"]), snapshot["after"])
             except AdapterUnavailable as dashboard_error:
                 problems.append(f"dashboard {snapshot['url_path']} not reverted: {dashboard_error}")
+        for snap in reversed(restored_helpers):
+            try:
+                helpers.set_options(hass, snap["entry_id"], snap["after"])
+            except AdapterUnavailable as helper_error:
+                problems.append(f"helper {snap['entry_id']} not reverted: {helper_error}")
         detail = f"; manual repair needed: {'; '.join(problems)}" if problems else ""
         raise UndoRefused(f"undo failed and was reverted: {error}{detail}") from error
     root = Path(hass.config.config_dir).resolve()
@@ -601,6 +739,7 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
         "undone",
         relatives,
         [DashboardRef(snapshot["url_path"]).label for snapshot in snapshots],
+        [snap["entry_id"] for snap in helper_snaps],
         needs_restart,
         warnings,
     )
@@ -619,6 +758,19 @@ async def _dashboards_changed_since(
             continue
         if digest != snapshot["sha256_after"]:
             changed.append(f"dashboard {ref.label}")
+    return changed
+
+
+def _helpers_changed_since(hass: HomeAssistant, snapshots: list[dict[str, Any]]) -> list[str]:
+    changed: list[str] = []
+    for snap in snapshots:
+        try:
+            _, digest = helpers.current_options(hass, snap["entry_id"])
+        except AdapterUnavailable:
+            changed.append(f"helper {snap['entry_id']}")
+            continue
+        if digest != snap["sha256_after"]:
+            changed.append(f"helper {snap['entry_id']}")
     return changed
 
 
