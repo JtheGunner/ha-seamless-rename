@@ -1,0 +1,9 @@
+# Planning artefacts (design specs and implementation plans) stay local
+docs/superpowers/
+
+# Python tooling
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
