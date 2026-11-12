@@ -1,5 +1,6 @@
 """Repair flow that rolls back an interrupted apply."""
 
+import logging
 from typing import Any
 
 import probatio as vol
@@ -8,6 +9,8 @@ from homeassistant.core import HomeAssistant
 
 from .ha import api
 from .ha.recovery import ISSUE_PREFIX
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class IncompleteApplyRepairFlow(RepairsFlow):
@@ -30,7 +33,9 @@ class IncompleteApplyRepairFlow(RepairsFlow):
             )
         try:
             await api.undo(self.hass, self._apply_id)
-        except api.RenameError as error:
+        except Exception as error:
+            if not isinstance(error, api.RenameError):
+                _LOGGER.exception("rolling back interrupted apply %s failed", self._apply_id)
             return self.async_abort(
                 reason="undo_failed", description_placeholders={"error": str(error)}
             )

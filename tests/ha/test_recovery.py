@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -183,3 +184,83 @@ async def test_undo_refuses_other_statuses(
     manifest.write_text(json.dumps(data))
     with pytest.raises(api.UndoRefused, match="interrupted"):
         await api.undo(hass, applied.apply_id)
+
+
+async def test_recovery_refuses_files_edited_after_the_crash_unless_forced(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    target = config_dir / "t.yaml"
+    target.write_text("x: sensor.foo\n")
+    apply_id = await _crashed_apply(hass, config_dir, ("sensor.foo", "sensor.bar"))
+    target.write_text("x: sensor.bar\n# edited after the crash\n")
+
+    with pytest.raises(api.UndoRefused, match="changed since"):
+        await api.undo(hass, apply_id)
+    assert "edited after the crash" in target.read_text()
+
+    await api.undo(hass, apply_id, force=True)
+    assert target.read_text() == "x: sensor.foo\n"
+
+
+async def test_recovery_accepts_untouched_and_apply_written_files(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    target = config_dir / "t.yaml"
+    target.write_text("x: sensor.foo\n")
+    apply_id = await _crashed_apply(hass, config_dir, ("sensor.foo", "sensor.bar"))
+    target.write_text("x: sensor.foo\n")  # the write never happened: still pristine
+    await api.undo(hass, apply_id)
+    assert target.read_text() == "x: sensor.foo\n"
+
+
+async def test_recovery_warns_about_entities_it_cannot_locate(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    apply_id = await _crashed_apply(hass, config_dir, ("sensor.foo", "sensor.bar"))
+    manifest_path = config_dir / WORK_DIR_NAME / "backups" / apply_id / "manifest.json"
+    data = json.loads(manifest_path.read_text())
+    data["entity_registry_ids"] = {}
+    manifest_path.write_text(json.dumps(data))
+
+    result = await api.undo(hass, apply_id)
+
+    assert result.status == "rolled_back"
+    assert any("sensor.foo could not be located" in w for w in result.warnings)
+
+
+async def test_undo_refuses_an_apply_that_is_still_running(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    apply_id = await _crashed_apply(hass, config_dir, ("sensor.foo", "sensor.bar"))
+    api._running_applies(hass).add(apply_id)
+    try:
+        with pytest.raises(api.UndoRefused, match="still running"):
+            await api.undo(hass, apply_id)
+    finally:
+        api._running_applies(hass).discard(apply_id)
+    assert api._running_applies(hass) == set()
+
+
+async def test_repair_flow_aborts_on_unexpected_errors(
+    hass: HomeAssistant, config_dir: Path
+) -> None:
+    flow = await repairs.async_create_fix_flow(hass, "incomplete_apply_x", {"apply_id": "x"})
+    flow.hass = hass
+    with patch.object(api, "undo", side_effect=OSError("disk gone")):
+        result = await flow.async_step_confirm({})
+    assert result["type"] == "abort" and result["reason"] == "undo_failed"
+
+
+async def test_unreadable_manifest_is_logged(
+    hass: HomeAssistant, config_dir: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    bad = config_dir / WORK_DIR_NAME / "backups" / "apply-bad"
+    bad.mkdir(parents=True)
+    (bad / "manifest.json").write_text("{not json")
+    caplog.set_level(logging.WARNING, logger=recovery.__name__)
+    await recovery.check_incomplete_applies(hass)
+    assert "unreadable manifest" in caplog.text

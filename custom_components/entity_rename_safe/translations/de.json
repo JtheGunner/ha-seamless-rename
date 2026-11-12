@@ -94,7 +94,7 @@
         "step": {
           "confirm": {
             "title": "Unterbrochene Umbenennung zurückrollen",
-            "description": "Anwendung {apply_id} zurückrollen? Dateien, Dashboards, Helfer und Entity-IDs werden auf den Stand vor dem Start zurückgesetzt."
+            "description": "Anwendung {apply_id} zurückrollen? Dateien, Dashboards, Helfer und Entity-IDs werden auf den Stand vor dem Start zurückgesetzt. Nach dem Absturz selbst geänderte Dateien, Dashboards oder Helfer werden nicht überschrieben: Das Zurückrollen stoppt und nennt sie (mit dem Undo-Dienst und force erzwingbar)."
           }
         },
         "abort": {

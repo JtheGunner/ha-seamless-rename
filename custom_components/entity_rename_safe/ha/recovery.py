@@ -1,6 +1,7 @@
 """Detect applies that were interrupted by a crash or restart and offer to undo them."""
 
 import json
+import logging
 from pathlib import Path
 
 from homeassistant.core import HomeAssistant
@@ -8,6 +9,7 @@ from homeassistant.helpers import issue_registry as ir
 
 from ..const import DOMAIN, WORK_DIR_NAME
 
+_LOGGER = logging.getLogger(__name__)
 ISSUE_PREFIX = "incomplete_apply_"
 
 
@@ -17,7 +19,10 @@ def _in_progress_apply_ids(work_dir: Path) -> list[str]:
     for manifest_path in sorted((work_dir / "backups").glob("*/manifest.json")):
         try:
             data = json.loads(manifest_path.read_text())
-        except OSError, ValueError:
+        except (OSError, ValueError) as error:
+            _LOGGER.warning(
+                "unreadable manifest %s, cannot check it for recovery: %s", manifest_path, error
+            )
             continue
         if isinstance(data, dict) and data.get("status") == "in_progress":
             found.append(manifest_path.parent.name)
