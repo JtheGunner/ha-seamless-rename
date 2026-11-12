@@ -22,6 +22,7 @@ PLAN_SCHEMA = vol.Schema(
         {
             vol.Optional("from"): cv.entity_id,
             vol.Optional("to"): cv.entity_id,
+            vol.Optional("include_uncertain", default=False): cv.boolean,
             vol.Optional("pattern"): vol.Schema(
                 {
                     vol.Required("match"): cv.string,
@@ -33,7 +34,9 @@ PLAN_SCHEMA = vol.Schema(
         cv.has_at_least_one_key("from", "pattern"),
     )
 )
-APPLY_SCHEMA = vol.Schema({vol.Required("plan_id"): cv.string})
+APPLY_SCHEMA = vol.Schema(
+    {vol.Required("plan_id"): cv.string, vol.Optional("exclude", default=list): [cv.string]}
+)
 UNDO_SCHEMA = vol.Schema(
     {vol.Required("apply_id"): cv.string, vol.Optional("force", default=False): cv.boolean}
 )
@@ -50,7 +53,9 @@ def _wrap(error: api.RenameError) -> HomeAssistantError:
 async def _plan(call: ServiceCall) -> dict[str, Any]:
     data = call.data
     try:
-        request = api.build_plan_request(data.get("from"), data.get("to"), data.get("pattern"))
+        request = api.build_plan_request(
+            data.get("from"), data.get("to"), data.get("pattern"), data["include_uncertain"]
+        )
         result = await api.plan(call.hass, request)
     except ValueError as error:
         raise ServiceValidationError(str(error)) from error
@@ -59,7 +64,7 @@ async def _plan(call: ServiceCall) -> dict[str, Any]:
 
 async def _apply(call: ServiceCall) -> dict[str, Any]:
     try:
-        result = await api.apply(call.hass, call.data["plan_id"])
+        result = await api.apply(call.hass, call.data["plan_id"], call.data["exclude"])
     except api.RenameError as error:
         raise _wrap(error) from error
     return result.to_response()

@@ -1,10 +1,12 @@
 """Core API: plan, apply and undo a rename. Services and websocket only wrap this."""
 
+import dataclasses
 import hashlib
 import json
 import logging
 import re
 import uuid
+from collections.abc import Collection
 from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 from fnmatch import fnmatchcase
@@ -92,6 +94,10 @@ class ApplyFailed(RenameError):
     """The apply failed and everything was rolled back."""
 
 
+class UnknownFinding(RenameError):
+    """``exclude`` names a finding that is not part of the plan."""
+
+
 class UndoRefused(RenameError):
     """The undo is not allowed in the current state."""
 
@@ -111,6 +117,7 @@ class PlanRequest:
 
     renames: tuple[Rename, ...] = ()
     pattern: PatternSpec | None = None
+    include_uncertain: bool = False
 
 
 @dataclass
@@ -122,6 +129,7 @@ class PlanResult:
     summary: dict[str, Any]
     diff: str = ""
     external: list[ExternalHit] = field(default_factory=list)
+    findings: list[dict[str, Any]] = field(default_factory=list)
 
     def to_response(self) -> dict[str, Any]:
         return {
@@ -130,6 +138,7 @@ class PlanResult:
             "blockers": self.blockers,
             "warnings": self.warnings,
             "summary": self.summary,
+            "findings": self.findings,
             "external": [
                 {"path": hit.path, "line": hit.line, "text": hit.text} for hit in self.external
             ],
@@ -205,20 +214,24 @@ def findings_response(findings: list[Finding]) -> list[dict[str, Any]]:
 
 
 def build_plan_request(
-    from_id: str | None, to_id: str | None, pattern: dict[str, Any] | None
+    from_id: str | None,
+    to_id: str | None,
+    pattern: dict[str, Any] | None,
+    include_uncertain: bool = False,
 ) -> PlanRequest:
     """Turn raw caller input into a ``PlanRequest``; raise ``ValueError`` if it is inconsistent."""
     if pattern is not None:
         if from_id is not None or to_id is not None:
             raise ValueError("give either from/to or pattern, not both")
         return PlanRequest(
-            pattern=PatternSpec(pattern["match"], pattern["replace"], pattern.get("domain"))
+            pattern=PatternSpec(pattern["match"], pattern["replace"], pattern.get("domain")),
+            include_uncertain=include_uncertain,
         )
     if from_id is None:
         raise ValueError("give either from/to or pattern")
     if to_id is None:
         raise ValueError("'to' is required together with 'from'")
-    return PlanRequest(renames=(Rename(from_id, to_id),))
+    return PlanRequest(renames=(Rename(from_id, to_id),), include_uncertain=include_uncertain)
 
 
 def _external_paths(hass: HomeAssistant) -> list[str]:
@@ -294,6 +307,42 @@ def _write_plan_files(work_dir: Path, plan_id: str, payload: dict[str, Any], dif
     write_atomic(plans / f"{plan_id}.diff", diff.encode())
 
 
+def _replace_levels(include_uncertain: bool) -> set[Confidence]:
+    levels = set(DEFAULT_REPLACE)
+    if include_uncertain:
+        levels.add(Confidence.UNCERTAIN)
+    return levels
+
+
+def _finding_rows(payload: dict[str, Any], replace: set[Confidence]) -> list[dict[str, Any]]:
+    """Flatten the findings of a plan so a client can show them and exclude single ones."""
+    groups: list[tuple[str, str, list[dict[str, Any]]]] = [
+        ("file", relative, items) for relative, items in payload["findings"].items()
+    ]
+    groups += [
+        ("dashboard", entry["url_path"] or "default", entry["findings"])
+        for entry in payload["lovelace"]
+    ]
+    groups += [
+        ("helper", f"{entry['domain']}:{entry['entry_id']}", entry["findings"])
+        for entry in payload["helpers"]
+    ]
+    return [
+        {
+            "finding_id": item["finding_id"],
+            "kind": kind,
+            "source": source,
+            "line": item["line"],
+            "confidence": item["confidence"],
+            "old": item["old"],
+            "new": item["new"],
+            "selected": Confidence(item["confidence"]) in replace,
+        }
+        for kind, source, items in groups
+        for item in items
+    ]
+
+
 async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
     """Scan the config, store a plan and its diff, and report blockers. Writes no config."""
     if bool(request.renames) == (request.pattern is not None):
@@ -306,18 +355,17 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
     else:
         renames = list(request.renames)
 
+    replace = _replace_levels(request.include_uncertain)
     preflight = run_preflight(renames, registry_ids, state_ids)
     mapping = {rename.from_id: rename.to_id for rename in renames}
     config_dir = Path(hass.config.config_dir)
     findings, hashes, scan_warnings = await hass.async_add_executor_job(
         _scan_files, config_dir, mapping
     )
-    _, diff = await hass.async_add_executor_job(
-        _render_all, config_dir, findings, set(DEFAULT_REPLACE)
-    )
+    _, diff = await hass.async_add_executor_job(_render_all, config_dir, findings, replace)
     dashboard_edits, dashboard_warnings = await scan_dashboards(hass, mapping)
     for edit in dashboard_edits:
-        new_config = rewrite_json(edit.config, edit.findings, set(DEFAULT_REPLACE))
+        new_config = rewrite_json(edit.config, edit.findings, replace)
         diff += render_diff(
             f"lovelace/{edit.ref.label}.json", render_config(edit.config), render_config(new_config)
         )
@@ -326,7 +374,7 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
         scan_external, _external_paths(hass), mapping
     )
     for helper in helper_plans:
-        new_options = rewrite_json(helper.options, helper.findings, set(DEFAULT_REPLACE))
+        new_options = rewrite_json(helper.options, helper.findings, replace)
         diff += render_diff(
             f"helpers/{helper.domain}-{helper.entry_id}.json",
             render_config(helper.options),
@@ -370,7 +418,7 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
         "plan_id": plan_id,
         "created_at": dt_util.utcnow().isoformat(),
         "renames": [{"from": r.from_id, "to": r.to_id} for r in renames],
-        "replace": [level.value for level in DEFAULT_REPLACE],
+        "replace": sorted(level.value for level in replace),
         "base_hashes": hashes,
         "findings": {rel: [asdict(item) for item in items] for rel, items in findings.items()},
         "helpers": [
@@ -397,7 +445,16 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
     }
     payload["plan_hash"] = _canonical_hash(payload)
     await hass.async_add_executor_job(_write_plan_files, _work_dir(hass), plan_id, payload, diff)
-    return PlanResult(plan_id, renames, preflight.blockers, warnings, summary, diff, external)
+    return PlanResult(
+        plan_id,
+        renames,
+        preflight.blockers,
+        warnings,
+        summary,
+        diff,
+        external,
+        _finding_rows(payload, replace),
+    )
 
 
 def _is_safe_relative(relative: str) -> bool:
@@ -607,18 +664,51 @@ def _running_applies(hass: HomeAssistant) -> set[str]:
     return running
 
 
-async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
-    """Apply a stored plan: back up, rewrite files, check config, rename, reload."""
+async def apply(hass: HomeAssistant, plan_id: str, exclude: Collection[str] = ()) -> ApplyResult:
+    """Apply a stored plan: back up, rewrite files, check config, rename, reload.
+
+    ``exclude`` lists finding IDs (see ``PlanResult.findings``) to leave untouched.
+    """
     apply_id = f"apply-{dt_util.utcnow():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
     running = _running_applies(hass)
     running.add(apply_id)
     try:
-        return await _apply(hass, plan_id, apply_id)
+        return await _apply(hass, plan_id, apply_id, frozenset(exclude))
     finally:
         running.discard(apply_id)
 
 
-async def _apply(hass: HomeAssistant, plan_id: str, apply_id: str) -> ApplyResult:
+def _drop_excluded(payload: dict[str, Any], excluded: frozenset[str]) -> dict[str, Any]:
+    """Return the plan payload without the excluded findings; reject unknown IDs."""
+    known = {
+        item["finding_id"]
+        for items in (
+            *payload["findings"].values(),
+            *(entry["findings"] for entry in payload["lovelace"]),
+            *(entry["findings"] for entry in payload["helpers"]),
+        )
+        for item in items
+    }
+    unknown = sorted(excluded - known)
+    if unknown:
+        raise UnknownFinding(f"not part of plan {payload['plan_id']}: {', '.join(unknown)}")
+
+    def keep(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [item for item in items if item["finding_id"] not in excluded]
+
+    return {
+        **payload,
+        "findings": {rel: keep(items) for rel, items in payload["findings"].items()},
+        "lovelace": [
+            {**entry, "findings": keep(entry["findings"])} for entry in payload["lovelace"]
+        ],
+        "helpers": [{**entry, "findings": keep(entry["findings"])} for entry in payload["helpers"]],
+    }
+
+
+async def _apply(
+    hass: HomeAssistant, plan_id: str, apply_id: str, excluded: frozenset[str] = frozenset()
+) -> ApplyResult:
     work_dir = _work_dir(hass)
     config_dir = Path(hass.config.config_dir)
     payload = await hass.async_add_executor_job(_load_plan, work_dir, plan_id)
@@ -628,6 +718,7 @@ async def _apply(hass: HomeAssistant, plan_id: str, apply_id: str) -> ApplyResul
     if created is None or dt_util.utcnow() - created > PLAN_TTL:
         raise PlanExpired(f"plan {plan_id} is older than {PLAN_TTL}; plan again")
     await hass.async_add_executor_job(_verify_base, config_dir, payload["base_hashes"])
+    payload = _drop_excluded(payload, excluded)
 
     renames = [Rename(item["from"], item["to"]) for item in payload["renames"]]
     mapping = {rename.from_id: rename.to_id for rename in renames}
@@ -660,6 +751,7 @@ async def _apply(hass: HomeAssistant, plan_id: str, apply_id: str) -> ApplyResul
             )
             for rel in changed
         ],
+        excluded_finding_ids=sorted(excluded),
         entity_registry_ids=registry_uuids(hass, [rename.from_id for rename in renames]),
     )
     stale = [rel for rel in changed if before[rel] != payload["base_hashes"].get(rel)]
@@ -726,7 +818,17 @@ async def _apply(hass: HomeAssistant, plan_id: str, apply_id: str) -> ApplyResul
             ]
             extra_helpers.extend(extra)
             await helpers.apply_entry_edits(
-                hass, [plan for plan in fresh if plan.entry_id in planned], replace, edited_helpers
+                hass,
+                [
+                    dataclasses.replace(
+                        plan,
+                        findings=[f for f in plan.findings if f.finding_id not in excluded],
+                    )
+                    for plan in fresh
+                    if plan.entry_id in planned
+                ],
+                replace,
+                edited_helpers,
             )
         helper_after = {
             snap.entry_id: helpers.current_options(hass, snap.entry_id)[0]

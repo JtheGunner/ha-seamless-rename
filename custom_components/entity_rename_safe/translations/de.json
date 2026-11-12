@@ -26,6 +26,10 @@
         "pattern": {
           "name": "Muster",
           "description": "Sammelregel mit match, replace und optionaler Domain."
+        },
+        "include_uncertain": {
+          "name": "Unsichere einbeziehen",
+          "description": "Auch unsichere Verweise ersetzen (standardmäßig aus)."
         }
       }
     },
@@ -36,6 +40,10 @@
         "plan_id": {
           "name": "Plan-ID",
           "description": "ID aus dem Plan-Dienst."
+        },
+        "exclude": {
+          "name": "Ausschließen",
+          "description": "Finding-IDs aus dem Plan, die unverändert bleiben sollen."
         }
       }
     },

@@ -153,3 +153,37 @@ async def test_plan_rejects_pattern_combined_with_from(
     response = await client.receive_json()
     assert response["success"] is False
     assert response["error"]["code"] == "invalid_request"
+
+
+async def test_exclude_and_include_uncertain_through_websocket(
+    hass: HomeAssistant, hass_ws_client, config_dir: Path, check_ok: None
+) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    add_entity(hass, "sensor.foo")
+    target = config_dir / "a.yaml"
+    target.write_text("entity_id: sensor.foo\n# sensor.foo in a comment\n")
+    client = await hass_ws_client(hass)
+
+    await client.send_json(
+        {
+            "id": 1,
+            "type": f"{DOMAIN}/plan",
+            "from": "sensor.foo",
+            "to": "sensor.bar",
+            "include_uncertain": True,
+        }
+    )
+    plan = (await client.receive_json())["result"]
+    assert [row["selected"] for row in plan["findings"]] == [True, True]
+    comment = next(row for row in plan["findings"] if row["confidence"] == "uncertain")
+
+    await client.send_json(
+        {
+            "id": 2,
+            "type": f"{DOMAIN}/apply",
+            "plan_id": plan["plan_id"],
+            "exclude": [comment["finding_id"]],
+        }
+    )
+    assert (await client.receive_json())["result"]["status"] == "completed"
+    assert target.read_text() == "entity_id: sensor.bar\n# sensor.foo in a comment\n"

@@ -46,6 +46,7 @@ def _guarded(handler: Handler) -> Handler:
         vol.Required("type"): f"{DOMAIN}/plan",
         vol.Optional("from"): cv.entity_id,
         vol.Optional("to"): cv.entity_id,
+        vol.Optional("include_uncertain", default=False): cv.boolean,
         vol.Optional("pattern"): vol.Schema(
             {
                 vol.Required("match"): cv.string,
@@ -59,17 +60,25 @@ def _guarded(handler: Handler) -> Handler:
 @async_response
 @_guarded
 async def ws_plan(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
-    request = api.build_plan_request(msg.get("from"), msg.get("to"), msg.get("pattern"))
+    request = api.build_plan_request(
+        msg.get("from"), msg.get("to"), msg.get("pattern"), msg["include_uncertain"]
+    )
     result = await api.plan(hass, request)
     connection.send_result(msg["id"], {**result.to_response(), "diff": result.diff})
 
 
-@websocket_command({vol.Required("type"): f"{DOMAIN}/apply", vol.Required("plan_id"): cv.string})
+@websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/apply",
+        vol.Required("plan_id"): cv.string,
+        vol.Optional("exclude", default=list): [cv.string],
+    }
+)
 @require_admin
 @async_response
 @_guarded
 async def ws_apply(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
-    result = await api.apply(hass, msg["plan_id"])
+    result = await api.apply(hass, msg["plan_id"], msg["exclude"])
     connection.send_result(msg["id"], result.to_response())
 
 
