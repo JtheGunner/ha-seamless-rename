@@ -28,6 +28,10 @@ class AdapterUnavailable(Exception):
     """The Lovelace API is missing or behaves differently than expected."""
 
 
+class DashboardNotConfigured(AdapterUnavailable):
+    """The dashboard has no saved configuration, so there is nothing to scan or rewrite."""
+
+
 @dataclass(frozen=True)
 class DashboardRef:
     """A storage-mode dashboard; ``url_path`` is ``None`` for the default dashboard."""
@@ -67,6 +71,14 @@ def _lovelace_data(hass: HomeAssistant) -> Any | None:
     return hass.data.get(LOVELACE_DATA)
 
 
+def _is_config_not_found(error: Exception) -> bool:
+    try:
+        from homeassistant.components.lovelace.const import ConfigNotFound
+    except ImportError:
+        return False
+    return isinstance(error, ConfigNotFound)
+
+
 def _dashboard(hass: HomeAssistant, ref: DashboardRef) -> Any:
     data = _lovelace_data(hass)
     if data is None:
@@ -101,6 +113,8 @@ async def load_dashboard(hass: HomeAssistant, ref: DashboardRef) -> tuple[dict[s
     try:
         config = await dashboard.async_load(False)
     except Exception as error:
+        if _is_config_not_found(error):
+            raise DashboardNotConfigured(f"{ref.label} has no saved configuration") from error
         raise AdapterUnavailable(f"loading {ref.label} failed: {error!r}") from error
     if not isinstance(config, dict):
         raise AdapterUnavailable(f"{ref.label} is not a dictionary")
@@ -133,6 +147,8 @@ async def scan_dashboards(
     for ref in refs:
         try:
             config, digest = await load_dashboard(hass, ref)
+        except DashboardNotConfigured:
+            continue
         except AdapterUnavailable as error:
             warnings.append(f"dashboard {ref.label} was not scanned, check it manually ({error})")
             continue

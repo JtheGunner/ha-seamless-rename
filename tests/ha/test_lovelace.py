@@ -153,6 +153,17 @@ async def test_unreadable_single_dashboard_becomes_warning(
     assert any("kitchen" in w for w in plan.warnings)
 
 
+async def test_dashboard_without_saved_config_is_skipped_without_warning(
+    hass: HomeAssistant, config_dir: Path
+) -> None:
+    add_entity(hass, "sensor.foo")
+    await _setup(hass, default=False, named=True)  # the default dashboard was never customised
+
+    plan = await _plan(hass)
+    assert list(plan.summary["dashboards"]) == ["kitchen"]
+    assert not any("default" in w for w in plan.warnings)
+
+
 async def test_without_lovelace_plan_has_no_dashboards(
     hass: HomeAssistant, config_dir: Path
 ) -> None:
