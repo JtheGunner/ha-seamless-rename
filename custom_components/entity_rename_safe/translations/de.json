@@ -82,7 +82,9 @@
       }
     },
     "error": {
-      "invalid_path": "Jeder Pfad muss absolut sein."
+      "invalid_path": "Jeder Pfad muss absolut sein.",
+      "not_a_directory": "Jeder Pfad muss ein existierender Ordner sein.",
+      "protected_path": "Dieser Ordner gehört zum internen Speicher von Home Assistant und kann nicht durchsucht werden."
     }
   }
 }

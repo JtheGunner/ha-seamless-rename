@@ -13,7 +13,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
 
-from .const import CONF_EXTERNAL_PATHS, DOMAIN
+from .const import CONF_EXTERNAL_PATHS, DOMAIN, WORK_DIR_NAME
 
 
 class EntityRenameSafeConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -41,9 +41,12 @@ class EntityRenameSafeOptionsFlow(OptionsFlow):
             paths = [
                 path.strip() for path in user_input.get(CONF_EXTERNAL_PATHS, []) if path.strip()
             ]
-            if all(Path(path).is_absolute() for path in paths):
+            if not all(Path(path).is_absolute() for path in paths):
+                errors["base"] = "invalid_path"
+            else:
+                errors.update(await self._check_folders(paths))
+            if not errors:
                 return self.async_create_entry(data={CONF_EXTERNAL_PATHS: paths})
-            errors["base"] = "invalid_path"
         current = list(self.config_entry.options.get(CONF_EXTERNAL_PATHS, []))
         schema = vol.Schema(
             {
@@ -53,3 +56,19 @@ class EntityRenameSafeOptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+
+    async def _check_folders(self, paths: list[str]) -> dict[str, str]:
+        """Return an error if a path is no folder or lies in a protected part of the config."""
+        config_dir = Path(self.hass.config.config_dir)
+        protected = (config_dir / ".storage", config_dir / WORK_DIR_NAME)
+
+        def check() -> dict[str, str]:
+            for path in paths:
+                real = Path(path).resolve()
+                if not real.is_dir():
+                    return {"base": "not_a_directory"}
+                if any(real.is_relative_to(guard.resolve()) for guard in protected):
+                    return {"base": "protected_path"}
+            return {}
+
+        return await self.hass.async_add_executor_job(check)

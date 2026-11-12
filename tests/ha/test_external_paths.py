@@ -133,3 +133,49 @@ async def test_options_flow_stores_absolute_paths_only(hass: HomeAssistant, tmp_
     )
     assert good["type"] is FlowResultType.CREATE_ENTRY
     assert entry.options[CONF_EXTERNAL_PATHS] == [str(tmp_path)]
+
+
+async def test_symlinks_fifos_oversized_and_secret_files_are_not_read(
+    hass: HomeAssistant, config_dir: Path, tmp_path: Path
+) -> None:
+    import os
+
+    from custom_components.entity_rename_safe.const import MAX_EXTERNAL_FILE_BYTES
+
+    add_entity(hass, "sensor.foo")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("sensor.foo")
+    external = tmp_path / "ext"
+    (external / ".storage").mkdir(parents=True)
+    (external / "linked_dir").symlink_to(outside, target_is_directory=True)
+    (external / "linked_file.txt").symlink_to(outside / "secret.txt")
+    os.mkfifo(external / "pipe.txt")
+    (external / "huge.txt").write_text("sensor.foo " + "x" * MAX_EXTERNAL_FILE_BYTES)
+    (external / ".storage" / "core.txt").write_text("sensor.foo")
+    (external / "secrets.yaml").write_text("k: sensor.foo")
+    (external / "flows_cred.json").write_text('{"sensor.foo": "token"}')
+    (external / "ok.txt").write_text("sensor.foo\n")
+    _own_entry(hass, [str(external)])
+
+    plan = await _plan(hass)
+
+    assert [Path(h.path).name for h in plan.external] == ["ok.txt"]
+
+
+async def test_options_flow_rejects_missing_and_protected_folders(
+    hass: HomeAssistant, config_dir: Path, tmp_path: Path
+) -> None:
+    (config_dir / ".storage").mkdir()
+    entry = _own_entry(hass, [])
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    missing = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_EXTERNAL_PATHS: [str(tmp_path / "nope")]}
+    )
+    assert missing["errors"] == {"base": "not_a_directory"}
+
+    protected = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_EXTERNAL_PATHS: [str(config_dir / ".storage")]}
+    )
+    assert protected["errors"] == {"base": "protected_path"}

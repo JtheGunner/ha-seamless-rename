@@ -82,7 +82,9 @@
       }
     },
     "error": {
-      "invalid_path": "Every path must be absolute."
+      "invalid_path": "Every path must be absolute.",
+      "not_a_directory": "Every path must be an existing folder.",
+      "protected_path": "This folder is part of Home Assistant's internal storage and cannot be searched."
     }
   }
 }
