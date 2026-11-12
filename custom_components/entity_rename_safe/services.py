@@ -84,6 +84,7 @@ async def _apply(call: ServiceCall) -> dict[str, Any]:
         "status": result.status,
         "changed_files": result.changed_files,
         "changed_dashboards": result.changed_dashboards,
+        "changed_helpers": result.changed_helpers,
         "restart_required": result.restart_required,
     }
 
@@ -98,6 +99,7 @@ async def _undo(call: ServiceCall) -> dict[str, Any]:
         "status": result.status,
         "changed_files": result.changed_files,
         "changed_dashboards": result.changed_dashboards,
+        "changed_helpers": result.changed_helpers,
         "restart_required": result.restart_required,
     }
 
