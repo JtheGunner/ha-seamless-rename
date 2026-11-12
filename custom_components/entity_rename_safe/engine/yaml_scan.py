@@ -1,15 +1,13 @@
 """Find entity ID references in YAML source text without re-serialising it."""
 
 import bisect
-import re
 from collections.abc import Mapping
 
 import yaml
 
+from .classify import classify, inside_jinja
 from .ids import build_token_pattern
 from .models import Confidence, Finding
-
-_JINJA_RE = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.DOTALL)
 
 
 class _Scalar:
@@ -56,15 +54,8 @@ def _collect_scalars(text: str) -> list[_Scalar] | None:
 
 
 def _classify(scalar: _Scalar, hit_start: int, hit_end: int, old_id: str, text: str) -> Confidence:
-    parts = [part.strip() for part in scalar.value.split(",")]
-    if scalar.value.strip() == old_id:
-        return Confidence.CERTAIN
-    if scalar.key == "entity_id" and old_id in parts:
-        return Confidence.CERTAIN
-    for region in _JINJA_RE.finditer(text, scalar.start, scalar.end):
-        if region.start() <= hit_start and hit_end <= region.end():
-            return Confidence.LIKELY
-    return Confidence.UNCERTAIN
+    jinja = inside_jinja(text, hit_start, hit_end, scalar.start, scalar.end)
+    return classify(scalar.value, old_id, scalar.key, jinja)
 
 
 def scan_yaml(text: str, path: str, mapping: Mapping[str, str]) -> list[Finding]:
