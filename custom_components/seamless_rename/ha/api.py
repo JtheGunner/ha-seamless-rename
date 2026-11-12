@@ -21,6 +21,7 @@ from ..const import CONF_EXTERNAL_PATHS, DEFAULT_EXCLUDES, DOMAIN, WORK_DIR_NAME
 from ..engine.ids import build_domain_pattern, is_valid_entity_id
 from ..engine.jinja_scan import find_pattern_warnings
 from ..engine.json_scan import rewrite_json
+from ..engine.messages import CodedMessage, describe
 from ..engine.models import Confidence, Finding, Rename
 from ..engine.planner import (
     TEMP_ID_PREFIX,
@@ -67,35 +68,54 @@ _ID_RE = re.compile(r"[A-Za-z0-9_.-]+")
 
 
 class RenameError(Exception):
-    """Base class for every error the core API raises on purpose."""
+    """Base class for every error the core API raises on purpose.
+
+    ``code`` is a stable identifier a client can translate; the exception text stays English.
+    """
+
+    code = "rename_rejected"
 
 
 class PlanNotFound(RenameError):
     """No stored plan or backup has this ID."""
 
+    code = "plan_not_found"
+
 
 class PlanBlocked(RenameError):
     """The plan has blockers and cannot be applied."""
+
+    code = "plan_blocked"
 
 
 class PlanStale(RenameError):
     """A file changed since the plan was made, or the plan file was altered."""
 
+    code = "plan_stale"
+
 
 class PlanExpired(RenameError):
     """The plan is older than the allowed age."""
+
+    code = "plan_expired"
 
 
 class ConfigCheckFailed(RenameError):
     """Home Assistant rejected the rewritten configuration; files were restored."""
 
+    code = "config_check_failed"
+
 
 class ApplyFailed(RenameError):
     """The apply failed and everything was rolled back."""
 
+    code = "apply_failed"
+
 
 class UnknownFinding(RenameError):
     """``exclude`` names a finding that is not part of the plan."""
+
+    code = "unknown_finding"
 
 
 class UndoRefused(RenameError):
@@ -136,7 +156,9 @@ class PlanResult:
             "plan_id": self.plan_id,
             "renames": [{"from": r.from_id, "to": r.to_id} for r in self.renames],
             "blockers": self.blockers,
+            "blocker_details": [describe(item) for item in self.blockers],
             "warnings": self.warnings,
+            "warning_details": [describe(item) for item in self.warnings],
             "summary": self.summary,
             "findings": self.findings,
             "external": [
@@ -164,6 +186,7 @@ class ApplyResult:
             "changed_helpers": self.changed_helpers,
             "restart_required": self.restart_required,
             "warnings": self.warnings,
+            "warning_details": [describe(item) for item in self.warnings],
         }
 
 
@@ -198,6 +221,7 @@ class AuditReport:
         return {
             "dead": {entity_id: findings_response(items) for entity_id, items in self.dead.items()},
             "warnings": self.warnings,
+            "warning_details": [describe(item) for item in self.warnings],
         }
 
 
@@ -279,11 +303,22 @@ def _scan_files(
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError) as error:
-            warnings.append(f"{relative}: could not be read and was skipped ({error})")
+            warnings.append(
+                CodedMessage(
+                    "file_unreadable",
+                    f"{relative}: could not be read and was skipped ({error})",
+                    file=relative,
+                    error=str(error),
+                )
+            )
             continue
         found = scan_yaml(text, relative, mapping, pattern)
         for warning in find_pattern_warnings(text, list(mapping)):
-            warnings.append(f"{relative}: {warning}")
+            warnings.append(
+                CodedMessage(
+                    warning.code, f"{relative}: {warning}", file=relative, **warning.params
+                )
+            )
         if found:
             findings[relative] = found
             hashes[relative] = sha256_of(path)
@@ -862,15 +897,23 @@ async def _apply(
     try:
         needs_restart = bool(await reload_domains(hass, domains)) or unknown
     except Exception as error:  # noqa: BLE001 - the change itself is already in place
-        warnings.append(f"reload failed, restart Home Assistant: {error}")
+        warnings.append(_reload_failed(error))
         needs_restart = True
     warnings.extend(
-        f"helper {entry_id} references a renamed entity but was not in the plan; plan again"
+        CodedMessage(
+            "helper_not_in_plan",
+            f"helper {entry_id} references a renamed entity but was not in the plan; plan again",
+            helper=entry_id,
+        )
         for entry_id in extra_helpers
     )
     known = registry_entity_ids(hass)
     warnings.extend(
-        f"{rename.to_id} is missing from the entity registry after the apply"
+        CodedMessage(
+            "missing_after_apply",
+            f"{rename.to_id} is missing from the entity registry after the apply",
+            entity=rename.to_id,
+        )
         for rename in renames
         if rename.to_id not in known
     )
@@ -966,13 +1009,19 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
     try:
         needs_restart = bool(await reload_domains(hass, domains)) or unknown
     except Exception as error:  # noqa: BLE001 - the files are already restored
-        warnings.append(f"reload failed, restart Home Assistant: {error}")
+        warnings.append(_reload_failed(error))
         needs_restart = True
     final_status = "rolled_back" if recovering else "undone"
     try:
         await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, final_status)
     except OSError as error:
-        warnings.append(f"the manifest could not be updated: {error}")
+        warnings.append(
+            CodedMessage(
+                "manifest_not_updated",
+                f"the manifest could not be updated: {error}",
+                error=str(error),
+            )
+        )
     return ApplyResult(
         apply_id,
         final_status,
@@ -981,6 +1030,12 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
         [snap["entry_id"] for snap in helper_snaps],
         needs_restart,
         warnings,
+    )
+
+
+def _reload_failed(error: Exception) -> CodedMessage:
+    return CodedMessage(
+        "reload_failed", f"reload failed, restart Home Assistant: {error}", error=str(error)
     )
 
 
@@ -996,9 +1051,22 @@ def _interrupted_steps(hass: HomeAssistant, manifest: Manifest) -> tuple[list[Re
         uuid_ = manifest.entity_registry_ids.get(rename.from_id)
         current = current_entity_id(hass, uuid_) if uuid_ else None
         if current is None:
-            warnings.append(f"{rename.from_id} could not be located in the registry; check it")
+            warnings.append(
+                CodedMessage(
+                    "not_located",
+                    f"{rename.from_id} could not be located in the registry; check it",
+                    entity=rename.from_id,
+                )
+            )
         elif current not in (rename.from_id, rename.to_id) and TEMP_ID_PREFIX not in current:
-            warnings.append(f"{rename.from_id} was found as {current}; it is moved back anyway")
+            warnings.append(
+                CodedMessage(
+                    "found_elsewhere",
+                    f"{rename.from_id} was found as {current}; it is moved back anyway",
+                    entity=rename.from_id,
+                    current=current,
+                )
+            )
         if current is not None and current != rename.from_id:
             steps.append(Rename(current, rename.from_id))
     return steps, warnings

@@ -1,6 +1,7 @@
 import pytest
 
 from custom_components.seamless_rename.engine.ids import is_valid_entity_id
+from custom_components.seamless_rename.engine.messages import describe
 from custom_components.seamless_rename.engine.models import Rename
 from custom_components.seamless_rename.engine.planner import (
     order_renames,
@@ -126,3 +127,47 @@ def test_diff_is_unified_and_empty_when_equal() -> None:
     assert diff.startswith("--- a/automations.yaml\n+++ b/automations.yaml\n")
     assert "-a: sensor.foo\n+a: sensor.bar\n" in diff
     assert render_diff("x.yaml", "same\n", "same\n") == ""
+
+
+def test_preflight_messages_carry_a_code_and_the_entity() -> None:
+    preflight = run_preflight(
+        [Rename("sensor.a", "sensor.b"), Rename("sensor.c", "sensor.b")],
+        registry_ids={"sensor.a", "sensor.c"},
+        state_ids={"sensor.a"},
+    )
+    assert [describe(item)["code"] for item in preflight.blockers] == ["duplicate_target"]
+    assert describe(preflight.blockers[0])["params"] == {"entity": "sensor.b"}
+    assert [describe(item)["code"] for item in preflight.warnings] == ["no_state"]
+    assert describe(preflight.warnings[0])["params"] == {"entity": "sensor.c"}
+
+
+def test_every_blocker_has_a_code() -> None:
+    preflight = run_preflight(
+        [
+            Rename("sensor.same", "sensor.same"),
+            Rename("sensor.bad", "Sensor.Bad"),
+            Rename("sensor.d", "light.d"),
+            Rename("sensor.unknown", "sensor.unknown2"),
+            Rename("sensor.e", "sensor.taken"),
+            Rename("sensor.t", "sensor.t1"),
+            Rename("sensor.t", "sensor.t2"),
+        ],
+        registry_ids={
+            "sensor.same",
+            "sensor.bad",
+            "sensor.d",
+            "sensor.e",
+            "sensor.taken",
+            "sensor.t",
+        },
+        state_ids=set(),
+    )
+    codes = {describe(item)["code"] for item in preflight.blockers}
+    assert codes == {
+        "same_id",
+        "invalid_id",
+        "domain_change",
+        "not_in_registry",
+        "target_exists",
+        "renamed_twice",
+    }

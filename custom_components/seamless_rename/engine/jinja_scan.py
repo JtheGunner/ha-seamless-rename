@@ -8,9 +8,11 @@ import re
 from collections.abc import Collection
 
 from .ids import object_id
+from .messages import CodedMessage
 
 MESSAGE = "possible pattern reference, check manually"
 MIN_FRAGMENT_LENGTH = 6
+LITERAL_HEURISTIC = "literal holds part of an old object ID"
 
 _JINJA_RE = re.compile(r"\{\{.*?\}\}|\{%.*?%\}", re.DOTALL)
 _LITERAL_RE = re.compile(r"""'([^'\\]*)'|"([^"\\]*)\"""")
@@ -34,9 +36,9 @@ def _fragment_in_literal(literal: str, old_id: str) -> bool:
     )
 
 
-def find_pattern_warnings(scalar: str, old_ids: Collection[str]) -> list[str]:
+def find_pattern_warnings(scalar: str, old_ids: Collection[str]) -> list[CodedMessage]:
     """Return one warning per dynamic-pattern heuristic that fires inside Jinja code."""
-    warnings: list[str] = []
+    warnings: list[CodedMessage] = []
     jinja = [region.group(0) for region in _JINJA_RE.finditer(scalar)]
     if not jinja:
         return warnings
@@ -44,9 +46,17 @@ def find_pattern_warnings(scalar: str, old_ids: Collection[str]) -> list[str]:
 
     for name, pattern in _HEURISTICS:
         if pattern.search(code):
-            warnings.append(f"{MESSAGE} ({name})")
+            warnings.append(
+                CodedMessage("pattern_reference", f"{MESSAGE} ({name})", heuristic=name)
+            )
 
     literals = [first or second for first, second in _LITERAL_RE.findall(code)]
     if any(_fragment_in_literal(literal, old_id) for literal in literals for old_id in old_ids):
-        warnings.append(f"{MESSAGE} (literal holds part of an old object ID)")
+        warnings.append(
+            CodedMessage(
+                "pattern_reference",
+                f"{MESSAGE} (literal holds part of an old object ID)",
+                heuristic=LITERAL_HEURISTIC,
+            )
+        )
     return warnings

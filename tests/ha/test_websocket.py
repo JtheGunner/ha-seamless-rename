@@ -62,6 +62,33 @@ async def test_rename_error_is_reported_to_client(
     response = await client.receive_json()
     assert response["success"] is False
     assert response["error"]["code"] == "rename_rejected"
+    assert response["error"]["translation_key"] == "plan_not_found"
+    assert response["error"]["translation_domain"] == DOMAIN
+
+
+async def test_plan_messages_come_with_codes_for_the_client(
+    hass: HomeAssistant, hass_ws_client, config_dir: Path
+) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    add_entity(hass, "sensor.a")
+    add_entity(hass, "sensor.b")
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {
+            "id": 1,
+            "type": f"{DOMAIN}/plan",
+            "renames": [
+                {"from": "sensor.a", "to": "sensor.a2"},
+                {"from": "sensor.b", "to": "sensor.a2"},
+            ],
+        }
+    )
+    plan = (await client.receive_json())["result"]
+    assert plan["blocker_details"] == [
+        {"code": "duplicate_target", "params": {"entity": "sensor.a2"}}
+    ]
+    assert len(plan["blocker_details"]) == len(plan["blockers"])
+    assert len(plan["warning_details"]) == len(plan["warnings"])
 
 
 async def test_plan_without_target_is_invalid_request(
