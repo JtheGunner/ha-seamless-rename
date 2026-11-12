@@ -123,6 +123,18 @@ class PlanResult:
     diff: str = ""
     external: list[ExternalHit] = field(default_factory=list)
 
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "plan_id": self.plan_id,
+            "renames": [{"from": r.from_id, "to": r.to_id} for r in self.renames],
+            "blockers": self.blockers,
+            "warnings": self.warnings,
+            "summary": self.summary,
+            "external": [
+                {"path": hit.path, "line": hit.line, "text": hit.text} for hit in self.external
+            ],
+        }
+
 
 @dataclass
 class ApplyResult:
@@ -133,6 +145,37 @@ class ApplyResult:
     changed_helpers: list[str] = field(default_factory=list)
     restart_required: bool = False
     warnings: list[str] = field(default_factory=list)
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "apply_id": self.apply_id,
+            "status": self.status,
+            "changed_files": self.changed_files,
+            "changed_dashboards": self.changed_dashboards,
+            "changed_helpers": self.changed_helpers,
+            "restart_required": self.restart_required,
+            "warnings": self.warnings,
+        }
+
+
+@dataclass(frozen=True)
+class ApplySummary:
+    """One line of the apply history."""
+
+    apply_id: str
+    created_at: str
+    status: str
+    renames: list[Rename]
+    finished_at: str | None = None
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "apply_id": self.apply_id,
+            "created_at": self.created_at,
+            "finished_at": self.finished_at,
+            "status": self.status,
+            "renames": [{"from": r.from_id, "to": r.to_id} for r in self.renames],
+        }
 
 
 @dataclass
@@ -159,6 +202,23 @@ def findings_response(findings: list[Finding]) -> list[dict[str, Any]]:
         }
         for finding in findings
     ]
+
+
+def build_plan_request(
+    from_id: str | None, to_id: str | None, pattern: dict[str, Any] | None
+) -> PlanRequest:
+    """Turn raw caller input into a ``PlanRequest``; raise ``ValueError`` if it is inconsistent."""
+    if pattern is not None:
+        if from_id is not None or to_id is not None:
+            raise ValueError("give either from/to or pattern, not both")
+        return PlanRequest(
+            pattern=PatternSpec(pattern["match"], pattern["replace"], pattern.get("domain"))
+        )
+    if from_id is None:
+        raise ValueError("give either from/to or pattern")
+    if to_id is None:
+        raise ValueError("'to' is required together with 'from'")
+    return PlanRequest(renames=(Rename(from_id, to_id),))
 
 
 def _external_paths(hass: HomeAssistant) -> list[str]:
@@ -922,3 +982,28 @@ async def references(hass: HomeAssistant, entity_id: str) -> list[Finding]:
         (item for items in findings.values() for item in items),
         key=lambda item: (item.location, item.line),
     )
+
+
+def _read_history(work_dir: Path) -> list[ApplySummary]:
+    summaries: list[ApplySummary] = []
+    for manifest_path in (work_dir / "backups").glob("*/manifest.json"):
+        try:
+            manifest = read_manifest(manifest_path.parent)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            _LOGGER.warning("unreadable manifest %s skipped in history: %s", manifest_path, error)
+            continue
+        summaries.append(
+            ApplySummary(
+                manifest.apply_id,
+                manifest.created_at,
+                manifest.status,
+                manifest.renames,
+                manifest.finished_at,
+            )
+        )
+    return sorted(summaries, key=lambda item: item.created_at, reverse=True)
+
+
+async def history(hass: HomeAssistant) -> list[ApplySummary]:
+    """List all recorded applies, newest first."""
+    return await hass.async_add_executor_job(_read_history, _work_dir(hass))
