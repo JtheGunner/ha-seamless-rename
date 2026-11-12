@@ -27,8 +27,14 @@ class _Scalar:
 def _collect_scalars(text: str) -> list[_Scalar] | None:
     """Return all scalar nodes (values and mapping keys) sorted by start, or None."""
     scalars: list[_Scalar] = []
+    # Anchors and aliases share node objects. Visit each node once so aliased content is
+    # recorded a single time and self-referencing aliases cannot recurse forever.
+    visited: set[int] = set()
 
     def walk(node: yaml.Node, key: str | None) -> None:
+        if id(node) in visited:
+            return
+        visited.add(id(node))
         if isinstance(node, yaml.ScalarNode):
             scalars.append(_Scalar(node.start_mark.index, node.end_mark.index, node.value, key))
         elif isinstance(node, yaml.SequenceNode):

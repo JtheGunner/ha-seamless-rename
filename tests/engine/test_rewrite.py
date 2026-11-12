@@ -52,3 +52,8 @@ def test_stale_finding_raises() -> None:
     findings = scan_yaml("entity_id: sensor.foo\n", "x.yaml", {"sensor.foo": "sensor.bar"})
     with pytest.raises(ValueError, match="changed"):
         apply_edits("entity_id: sensor.zzz\n", findings, SAFE)
+
+
+def test_aliased_node_is_replaced_once() -> None:
+    text = "base: &base\n  entity_id: sensor.foo\nother:\n  <<: *base\n"
+    assert _rewrite(text, {"sensor.foo": "sensor.bar"}) == text.replace("sensor.foo", "sensor.bar")

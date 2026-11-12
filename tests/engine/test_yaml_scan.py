@@ -70,3 +70,13 @@ def test_offsets_point_at_the_id() -> None:
     finding = _only(text)
     assert finding.offset is not None and finding.length is not None
     assert text[finding.offset : finding.offset + finding.length] == "sensor.foo"
+
+
+def test_aliased_node_yields_one_finding() -> None:
+    text = "base: &base\n  entity_id: sensor.foo\nother:\n  <<: *base\n"
+    assert len(scan_yaml(text, "x.yaml", MAPPING)) == 1
+
+
+def test_self_referencing_alias_does_not_crash() -> None:
+    findings = scan_yaml("a: &x [*x, sensor.foo]\n", "x.yaml", MAPPING)
+    assert len(findings) == 1
