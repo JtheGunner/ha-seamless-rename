@@ -71,3 +71,14 @@ def test_domain_pattern_finds_only_known_domains() -> None:
         "sensor.five",
     ]
     assert build_domain_pattern([]).search(text) is None
+
+
+def test_domain_pattern_skips_file_names() -> None:
+    from custom_components.entity_rename_safe.engine.ids import build_domain_pattern
+
+    pattern = build_domain_pattern(["sensor", "light"])
+    text = "a: !include sensor.yaml\nb: packages/light.yml\nc: sensor.yaml_mode\nd: light.json_feed"
+    assert [m.group("id") for m in pattern.finditer(text)] == [
+        "sensor.yaml_mode",
+        "light.json_feed",
+    ]

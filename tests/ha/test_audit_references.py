@@ -108,3 +108,20 @@ async def test_services_return_reports(hass: HomeAssistant, config_dir: Path) ->
             blocking=True,
             return_response=True,
         )
+
+
+async def test_audit_ignores_file_names_and_reports_weaker_hits(
+    hass: HomeAssistant, config_dir: Path
+) -> None:
+    add_entity(hass, "sensor.real")
+    add_entity(hass, "light.lamp")
+    (config_dir / "a.yaml").write_text(
+        "sensor: !include sensor.yaml\n"
+        "light: !include packages/light.yml\n"
+        "t: \"{{ states('sensor.ghost_jinja') }}\"\n"
+        "# note: sensor.ghost_comment\n"
+    )
+    report = await api.audit(hass)
+    assert sorted(report.dead) == ["sensor.ghost_comment", "sensor.ghost_jinja"]
+    assert report.dead["sensor.ghost_jinja"][0].confidence is Confidence.LIKELY
+    assert report.dead["sensor.ghost_comment"][0].confidence is Confidence.UNCERTAIN
