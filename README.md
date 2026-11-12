@@ -165,6 +165,10 @@ The **Seamless Rename** entry in the sidebar (administrators only) offers the sa
 - **Bulk** by pattern or pasted `from,to` lines, with a table that marks collisions.
 - **History** of all applies with undo.
 
+To hide the sidebar entry, open **Settings → Devices & services → Seamless Rename → Configure** and
+turn off **Show panel in sidebar**. The change applies at once, without a restart. Services and the
+websocket API keep working; the panel is shown by default.
+
 ### 🌍 Languages
 
 The panel, the setup and options dialogs, the services and the repair issue follow the language of the
