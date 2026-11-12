@@ -30,6 +30,10 @@
         "include_uncertain": {
           "name": "Unsichere einbeziehen",
           "description": "Auch unsichere Verweise ersetzen (standardmäßig aus)."
+        },
+        "renames": {
+          "name": "Umbenennungen",
+          "description": "Liste von {from, to}-Paaren für eine Sammelumbenennung."
         }
       }
     },

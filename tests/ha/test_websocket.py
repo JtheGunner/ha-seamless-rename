@@ -187,3 +187,25 @@ async def test_exclude_and_include_uncertain_through_websocket(
     )
     assert (await client.receive_json())["result"]["status"] == "completed"
     assert target.read_text() == "entity_id: sensor.bar\n# sensor.foo in a comment\n"
+
+
+async def test_plan_accepts_a_list_of_renames(
+    hass: HomeAssistant, hass_ws_client, config_dir: Path
+) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    add_entity(hass, "sensor.a")
+    add_entity(hass, "sensor.b")
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {
+            "id": 1,
+            "type": f"{DOMAIN}/plan",
+            "renames": [
+                {"from": "sensor.a", "to": "sensor.a2"},
+                {"from": "sensor.b", "to": "sensor.a2"},
+            ],
+        }
+    )
+    plan = (await client.receive_json())["result"]
+    assert len(plan["renames"]) == 2
+    assert any("more than one rename" in blocker for blocker in plan["blockers"])

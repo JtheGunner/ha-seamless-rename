@@ -8,6 +8,10 @@ plan:
       example: sensor.new_name
       selector:
         text:
+    renames:
+      example: "[{\"from\": \"sensor.old\", \"to\": \"sensor.new\"}]"
+      selector:
+        object:
     pattern:
       selector:
         object:

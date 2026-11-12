@@ -23,6 +23,9 @@ PLAN_SCHEMA = vol.Schema(
             vol.Optional("from"): cv.entity_id,
             vol.Optional("to"): cv.entity_id,
             vol.Optional("include_uncertain", default=False): cv.boolean,
+            vol.Optional("renames"): [
+                {vol.Required("from"): cv.entity_id, vol.Required("to"): cv.entity_id}
+            ],
             vol.Optional("pattern"): vol.Schema(
                 {
                     vol.Required("match"): cv.string,
@@ -31,7 +34,7 @@ PLAN_SCHEMA = vol.Schema(
                 }
             ),
         },
-        cv.has_at_least_one_key("from", "pattern"),
+        cv.has_at_least_one_key("from", "pattern", "renames"),
     )
 )
 APPLY_SCHEMA = vol.Schema(
@@ -54,7 +57,11 @@ async def _plan(call: ServiceCall) -> dict[str, Any]:
     data = call.data
     try:
         request = api.build_plan_request(
-            data.get("from"), data.get("to"), data.get("pattern"), data["include_uncertain"]
+            data.get("from"),
+            data.get("to"),
+            data.get("pattern"),
+            data["include_uncertain"],
+            data.get("renames"),
         )
         result = await api.plan(call.hass, request)
     except ValueError as error:

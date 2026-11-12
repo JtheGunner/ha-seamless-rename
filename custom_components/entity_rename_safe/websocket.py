@@ -47,6 +47,9 @@ def _guarded(handler: Handler) -> Handler:
         vol.Optional("from"): cv.entity_id,
         vol.Optional("to"): cv.entity_id,
         vol.Optional("include_uncertain", default=False): cv.boolean,
+        vol.Optional("renames"): [
+            {vol.Required("from"): cv.entity_id, vol.Required("to"): cv.entity_id}
+        ],
         vol.Optional("pattern"): vol.Schema(
             {
                 vol.Required("match"): cv.string,
@@ -61,7 +64,11 @@ def _guarded(handler: Handler) -> Handler:
 @_guarded
 async def ws_plan(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
     request = api.build_plan_request(
-        msg.get("from"), msg.get("to"), msg.get("pattern"), msg["include_uncertain"]
+        msg.get("from"),
+        msg.get("to"),
+        msg.get("pattern"),
+        msg["include_uncertain"],
+        msg.get("renames"),
     )
     result = await api.plan(hass, request)
     connection.send_result(msg["id"], {**result.to_response(), "diff": result.diff})

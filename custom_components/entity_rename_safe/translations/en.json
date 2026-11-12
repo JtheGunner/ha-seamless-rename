@@ -30,6 +30,10 @@
         "include_uncertain": {
           "name": "Include uncertain",
           "description": "Also rewrite uncertain references (off by default)."
+        },
+        "renames": {
+          "name": "Renames",
+          "description": "List of {from, to} pairs for a bulk rename."
         }
       }
     },

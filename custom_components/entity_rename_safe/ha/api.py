@@ -218,19 +218,25 @@ def build_plan_request(
     to_id: str | None,
     pattern: dict[str, Any] | None,
     include_uncertain: bool = False,
+    renames: list[dict[str, str]] | None = None,
 ) -> PlanRequest:
     """Turn raw caller input into a ``PlanRequest``; raise ``ValueError`` if it is inconsistent."""
+    single = from_id is not None or to_id is not None
+    chosen = sum((single, pattern is not None, bool(renames)))
+    if chosen != 1:
+        raise ValueError("give exactly one of from/to, renames or pattern")
     if pattern is not None:
-        if from_id is not None or to_id is not None:
-            raise ValueError("give either from/to or pattern, not both")
         return PlanRequest(
             pattern=PatternSpec(pattern["match"], pattern["replace"], pattern.get("domain")),
             include_uncertain=include_uncertain,
         )
-    if from_id is None:
-        raise ValueError("give either from/to or pattern")
-    if to_id is None:
-        raise ValueError("'to' is required together with 'from'")
+    if renames:
+        return PlanRequest(
+            renames=tuple(Rename(item["from"], item["to"]) for item in renames),
+            include_uncertain=include_uncertain,
+        )
+    if from_id is None or to_id is None:
+        raise ValueError("'from' and 'to' are required together")
     return PlanRequest(renames=(Rename(from_id, to_id),), include_uncertain=include_uncertain)
 
 
