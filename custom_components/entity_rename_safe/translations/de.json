@@ -1,29 +1,70 @@
 {
   "config": {
-    "step": {"user": {"title": "Entity Rename Safe", "description": "Entitäten sicher umbenennen und alle Verwender anpassen."}},
-    "abort": {"already_configured": "Entity Rename Safe ist bereits eingerichtet."}
+    "step": {
+      "user": {
+        "title": "Entity Rename Safe",
+        "description": "Entitäten sicher umbenennen und alle Verwender anpassen."
+      }
+    },
+    "abort": {
+      "already_configured": "Entity Rename Safe ist bereits eingerichtet."
+    }
   },
   "services": {
     "plan": {
       "name": "Umbenennung planen",
       "description": "Durchsucht die Konfiguration nach einer Umbenennung und speichert einen Plan, ohne etwas zu ändern.",
       "fields": {
-        "from": {"name": "Von", "description": "Aktuelle Entity-ID."},
-        "to": {"name": "Nach", "description": "Neue Entity-ID."},
-        "pattern": {"name": "Muster", "description": "Sammelregel mit match, replace und optionaler Domain."}
+        "from": {
+          "name": "Von",
+          "description": "Aktuelle Entity-ID."
+        },
+        "to": {
+          "name": "Nach",
+          "description": "Neue Entity-ID."
+        },
+        "pattern": {
+          "name": "Muster",
+          "description": "Sammelregel mit match, replace und optionaler Domain."
+        }
       }
     },
     "apply": {
       "name": "Plan anwenden",
       "description": "Sichert, schreibt die Konfiguration um und benennt die Entitäten eines gespeicherten Plans um.",
-      "fields": {"plan_id": {"name": "Plan-ID", "description": "ID aus dem Plan-Dienst."}}
+      "fields": {
+        "plan_id": {
+          "name": "Plan-ID",
+          "description": "ID aus dem Plan-Dienst."
+        }
+      }
     },
     "undo": {
       "name": "Umbenennung rückgängig machen",
       "description": "Stellt Dateien und Entity-IDs einer abgeschlossenen Anwendung wieder her.",
       "fields": {
-        "apply_id": {"name": "Anwendungs-ID", "description": "ID aus dem Anwenden-Dienst."},
-        "force": {"name": "Erzwingen", "description": "Überschreibt Dateien, die nach der Anwendung geändert wurden."}
+        "apply_id": {
+          "name": "Anwendungs-ID",
+          "description": "ID aus dem Anwenden-Dienst."
+        },
+        "force": {
+          "name": "Erzwingen",
+          "description": "Überschreibt Dateien, die nach der Anwendung geändert wurden."
+        }
+      }
+    },
+    "audit": {
+      "name": "Referenzen prüfen",
+      "description": "Listet Verweise auf nicht existierende Entitäten. Ändert nichts."
+    },
+    "references": {
+      "name": "Referenzen auflisten",
+      "description": "Listet alle Stellen, die eine Entität erwähnen. Ändert nichts.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity-ID",
+          "description": "Nachzuschlagende Entität."
+        }
       }
     }
   }

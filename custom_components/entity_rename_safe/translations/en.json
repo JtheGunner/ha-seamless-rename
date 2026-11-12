@@ -1,29 +1,70 @@
 {
   "config": {
-    "step": {"user": {"title": "Entity Rename Safe", "description": "Rename entities safely and update every consumer."}},
-    "abort": {"already_configured": "Entity Rename Safe is already set up."}
+    "step": {
+      "user": {
+        "title": "Entity Rename Safe",
+        "description": "Rename entities safely and update every consumer."
+      }
+    },
+    "abort": {
+      "already_configured": "Entity Rename Safe is already set up."
+    }
   },
   "services": {
     "plan": {
       "name": "Plan rename",
       "description": "Scan the configuration for an entity rename and store a plan without changing anything.",
       "fields": {
-        "from": {"name": "From", "description": "Current entity ID."},
-        "to": {"name": "To", "description": "New entity ID."},
-        "pattern": {"name": "Pattern", "description": "Bulk rule with match, replace and optional domain."}
+        "from": {
+          "name": "From",
+          "description": "Current entity ID."
+        },
+        "to": {
+          "name": "To",
+          "description": "New entity ID."
+        },
+        "pattern": {
+          "name": "Pattern",
+          "description": "Bulk rule with match, replace and optional domain."
+        }
       }
     },
     "apply": {
       "name": "Apply plan",
       "description": "Back up, rewrite the configuration and rename the entities of a stored plan.",
-      "fields": {"plan_id": {"name": "Plan ID", "description": "ID returned by the plan service."}}
+      "fields": {
+        "plan_id": {
+          "name": "Plan ID",
+          "description": "ID returned by the plan service."
+        }
+      }
     },
     "undo": {
       "name": "Undo rename",
       "description": "Restore the files and entity IDs of a completed apply.",
       "fields": {
-        "apply_id": {"name": "Apply ID", "description": "ID returned by the apply service."},
-        "force": {"name": "Force", "description": "Overwrite files that changed after the apply."}
+        "apply_id": {
+          "name": "Apply ID",
+          "description": "ID returned by the apply service."
+        },
+        "force": {
+          "name": "Force",
+          "description": "Overwrite files that changed after the apply."
+        }
+      }
+    },
+    "audit": {
+      "name": "Audit references",
+      "description": "List references to entities that do not exist. Changes nothing."
+    },
+    "references": {
+      "name": "List references",
+      "description": "List every place that mentions an entity. Changes nothing.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity ID",
+          "description": "Entity to look up."
+        }
       }
     }
   }
