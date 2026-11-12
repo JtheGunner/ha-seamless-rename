@@ -26,6 +26,14 @@
         "pattern": {
           "name": "Muster",
           "description": "Sammelregel mit match, replace und optionaler Domain."
+        },
+        "include_uncertain": {
+          "name": "Unsichere einbeziehen",
+          "description": "Auch unsichere Verweise ersetzen (standardmäßig aus)."
+        },
+        "renames": {
+          "name": "Umbenennungen",
+          "description": "Liste von Objekten mit je einer from- und einer to-Entity-ID für eine Sammelumbenennung."
         }
       }
     },
@@ -36,6 +44,10 @@
         "plan_id": {
           "name": "Plan-ID",
           "description": "ID aus dem Plan-Dienst."
+        },
+        "exclude": {
+          "name": "Ausschließen",
+          "description": "Finding-IDs aus dem Plan, die unverändert bleiben sollen."
         }
       }
     },

@@ -8,9 +8,17 @@ plan:
       example: sensor.new_name
       selector:
         text:
+    renames:
+      example: "[{\"from\": \"sensor.old\", \"to\": \"sensor.new\"}]"
+      selector:
+        object:
     pattern:
       selector:
         object:
+    include_uncertain:
+      default: false
+      selector:
+        boolean:
 apply:
   fields:
     plan_id:
@@ -18,6 +26,10 @@ apply:
       example: plan-0123456789ab
       selector:
         text:
+    exclude:
+      example: "[\"automations.yaml:120\"]"
+      selector:
+        object:
 undo:
   fields:
     apply_id:

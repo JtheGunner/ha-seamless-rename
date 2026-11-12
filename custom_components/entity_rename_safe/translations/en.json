@@ -26,6 +26,14 @@
         "pattern": {
           "name": "Pattern",
           "description": "Bulk rule with match, replace and optional domain."
+        },
+        "include_uncertain": {
+          "name": "Include uncertain",
+          "description": "Also rewrite uncertain references (off by default)."
+        },
+        "renames": {
+          "name": "Renames",
+          "description": "List of objects with a from and a to entity ID for a bulk rename."
         }
       }
     },
@@ -36,6 +44,10 @@
         "plan_id": {
           "name": "Plan ID",
           "description": "ID returned by the plan service."
+        },
+        "exclude": {
+          "name": "Exclude",
+          "description": "Finding IDs from the plan to leave unchanged."
         }
       }
     },

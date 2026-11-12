@@ -17,6 +17,11 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy custom_components
       - run: uv run pytest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Panel component tests
+        run: node --test "tests/panel/*.test.mjs"
 
   # Runs the HA tests against the newest Home Assistant pre-release to catch changes in
   # internal APIs early. Advisory: a failure here does not block a merge.
