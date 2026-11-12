@@ -34,7 +34,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         frontend_url_path=PANEL_URL_PATH,
         webcomponent_name=WEBCOMPONENT_NAME,
         module_url=module_url,
-        sidebar_title="Entity Rename",
+        sidebar_title="Seamless Rename",
         sidebar_icon="mdi:form-textbox",
         require_admin=True,
     )

@@ -1,5 +1,5 @@
 /**
- * Entity Rename Safe panel: a vanilla web component without a build chain.
+ * Seamless Rename panel: a vanilla web component without a build chain.
  *
  * It only talks to the integration through its websocket commands and holds no rename logic.
  * All text is inserted as text nodes, never as HTML.

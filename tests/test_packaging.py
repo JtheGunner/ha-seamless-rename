@@ -26,3 +26,11 @@ def test_manifest_and_project_versions_match() -> None:
 def test_license_file_names_the_readme_license() -> None:
     assert (ROOT / "LICENSE").read_text().startswith("MIT License")
     assert "license-MIT" in (ROOT / "README.md").read_text()
+
+
+def test_display_name_is_seamless_rename() -> None:
+    assert MANIFEST["name"] == "Seamless Rename"
+    translations_dir = ROOT / "custom_components/entity_rename_safe/translations"
+    for language in ("en", "de"):
+        translations = json.loads((translations_dir / f"{language}.json").read_text())
+        assert translations["config"]["step"]["user"]["title"] == "Seamless Rename"
