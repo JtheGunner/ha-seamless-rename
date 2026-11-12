@@ -1,0 +1,31 @@
+plan:
+  fields:
+    from:
+      example: sensor.old_name
+      selector:
+        entity:
+    to:
+      example: sensor.new_name
+      selector:
+        text:
+    pattern:
+      selector:
+        object:
+apply:
+  fields:
+    plan_id:
+      required: true
+      example: plan-0123456789ab
+      selector:
+        text:
+undo:
+  fields:
+    apply_id:
+      required: true
+      example: apply-20261112T031500-1a2b3c
+      selector:
+        text:
+    force:
+      default: false
+      selector:
+        boolean:
