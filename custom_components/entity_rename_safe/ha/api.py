@@ -711,9 +711,9 @@ async def _apply(hass: HomeAssistant, plan_id: str, apply_id: str) -> ApplyResul
         if new_texts:
             files_written = True
             await hass.async_add_executor_job(_write_texts, config_dir, new_texts)
-            error_text = await async_check_ha_config_file(hass)
-            if error_text:
-                raise ConfigCheckFailed(error_text)
+            check = await async_check_ha_config_file(hass)
+            if check.errors:
+                raise ConfigCheckFailed(check.error_str)
         _rename_in_registry(hass, ordered, done)
         for change in dashboards:
             await save_dashboard(hass, change.ref, change.after)
