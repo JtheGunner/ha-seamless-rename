@@ -182,3 +182,106 @@ async def test_apply_blocks_when_temporary_id_is_taken(
     with pytest.raises(api.PlanBlocked, match="temporary"):
         await api.apply(hass, plan_id)
     assert er.async_get(hass).async_get("sensor.a") is not None
+
+
+async def test_write_failure_midway_restores_all_files(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    (config_dir / "a.yaml").write_text("x: sensor.foo\n")
+    (config_dir / "b.yaml").write_text("y: sensor.foo\n")
+    plan_id = await _plan(hass, ("sensor.foo", "sensor.bar"))
+    real = api.write_atomic
+    calls = {"n": 0}
+
+    def flaky(path: Path, data: bytes) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("disk full")
+        real(path, data)
+
+    with patch.object(api, "write_atomic", flaky), pytest.raises(api.ApplyFailed):
+        await api.apply(hass, plan_id)
+
+    assert (config_dir / "a.yaml").read_text() == "x: sensor.foo\n"
+    assert (config_dir / "b.yaml").read_text() == "y: sensor.foo\n"
+    assert er.async_get(hass).async_get("sensor.foo") is not None
+
+
+async def test_config_check_exception_restores_files(hass: HomeAssistant, config_dir: Path) -> None:
+    add_entity(hass, "sensor.foo")
+    target = config_dir / "a.yaml"
+    target.write_text("x: sensor.foo\n")
+    plan_id = await _plan(hass, ("sensor.foo", "sensor.bar"))
+    with (
+        patch(CHECK_PATH, side_effect=RuntimeError("checker crashed")),
+        pytest.raises(api.ApplyFailed, match="checker crashed"),
+    ):
+        await api.apply(hass, plan_id)
+    assert target.read_text() == "x: sensor.foo\n"
+
+
+async def test_failed_rollback_still_restores_files_and_is_reported(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.a")
+    add_entity(hass, "sensor.b")
+    target = config_dir / "t.yaml"
+    target.write_text("x: sensor.a\ny: sensor.b\n")
+    plan_id = await _plan(hass, ("sensor.a", "sensor.a2"), ("sensor.b", "sensor.b2"))
+    real = api.rename_entity
+    calls = {"n": 0}
+
+    def flaky(hass_: HomeAssistant, old: str, new: str) -> None:
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise ValueError("boom")
+        real(hass_, old, new)
+
+    with (
+        patch.object(api, "rename_entity", flaky),
+        pytest.raises(api.ApplyFailed, match="manual repair"),
+    ):
+        await api.apply(hass, plan_id)
+    assert target.read_text() == "x: sensor.a\ny: sensor.b\n"
+
+
+async def test_reload_failure_keeps_completed_status_and_asks_for_restart(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    (config_dir / "automations.yaml").write_text(AUTOMATIONS)
+    plan_id = await _plan(hass, ("sensor.foo", "sensor.bar"))
+    with patch.object(api, "reload_domains", side_effect=RuntimeError("reload broke")):
+        result = await api.apply(hass, plan_id)
+    assert result.status == "completed"
+    assert result.restart_required
+    assert any("reload failed" in w for w in result.warnings)
+    manifest = json.loads(
+        (config_dir / WORK_DIR_NAME / "backups" / result.apply_id / "manifest.json").read_text()
+    )
+    assert manifest["status"] == "completed"
+
+
+async def test_apply_rejects_plan_naming_protected_files(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    plan_id = await _plan(hass, ("sensor.foo", "sensor.bar"))
+    plan_file = config_dir / WORK_DIR_NAME / "plans" / f"{plan_id}.json"
+    data = json.loads(plan_file.read_text())
+    data["base_hashes"] = {"../outside.yaml": "x", ".storage/core.yaml": "y"}
+    data["plan_hash"] = api._canonical_hash(data)
+    plan_file.write_text(json.dumps(data))
+    with pytest.raises(api.PlanStale, match="must not be written"):
+        await api.apply(hass, plan_id)
+
+
+async def test_apply_corrupt_plan_json_is_a_plan_error(
+    hass: HomeAssistant, config_dir: Path
+) -> None:
+    add_entity(hass, "sensor.foo")
+    plan_id = await _plan(hass, ("sensor.foo", "sensor.bar"))
+    (config_dir / WORK_DIR_NAME / "plans" / f"{plan_id}.json").write_text("{truncated")
+    with pytest.raises(api.PlanStale):
+        await api.apply(hass, plan_id)

@@ -2,11 +2,13 @@
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import timedelta
-from pathlib import Path
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -39,6 +41,7 @@ from .reload import domains_for_files, reload_domains
 
 PLAN_TTL = timedelta(hours=24)
 DEFAULT_REPLACE = (Confidence.CERTAIN, Confidence.LIKELY)
+_LOGGER = logging.getLogger(__name__)
 _ID_RE = re.compile(r"[A-Za-z0-9_.-]+")
 
 
@@ -107,6 +110,7 @@ class ApplyResult:
     status: str
     changed_files: list[str] = field(default_factory=list)
     restart_required: bool = False
+    warnings: list[str] = field(default_factory=list)
 
 
 def _work_dir(hass: HomeAssistant) -> Path:
@@ -224,15 +228,47 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
     return PlanResult(plan_id, renames, preflight.blockers, warnings, summary, diff)
 
 
+def _is_safe_relative(relative: str) -> bool:
+    """True for a YAML path inside the config folder that no exclude pattern covers."""
+    path = PurePosixPath(relative)
+    if path.is_absolute() or ".." in path.parts or not relative.endswith((".yaml", ".yml")):
+        return False
+    return not any(
+        fnmatchcase(part, pattern) for part in path.parts for pattern in DEFAULT_EXCLUDES
+    )
+
+
 def _load_plan(work_dir: Path, plan_id: str) -> dict[str, Any]:
     _check_id(plan_id, "plan")
     path = work_dir / "plans" / f"{plan_id}.json"
     if not path.is_file():
         raise PlanNotFound(f"no plan {plan_id}")
-    payload: dict[str, Any] = json.loads(path.read_text())
-    if payload.get("plan_hash") != _canonical_hash(payload):
-        raise PlanStale(f"plan {plan_id} was altered after it was created")
+    try:
+        payload: dict[str, Any] = json.loads(path.read_text())
+        if payload.get("plan_hash") != _canonical_hash(payload):
+            raise PlanStale(f"plan {plan_id} was altered after it was created")
+        for key in ("blockers", "created_at", "renames", "replace", "findings", "base_hashes"):
+            if key not in payload:
+                raise PlanStale(f"plan {plan_id} is incomplete: '{key}' is missing")
+    except (OSError, ValueError, AttributeError) as error:
+        raise PlanStale(f"plan {plan_id} could not be read: {error}") from error
+    unsafe = [
+        rel for rel in (*payload["base_hashes"], *payload["findings"]) if not _is_safe_relative(rel)
+    ]
+    if unsafe:
+        raise PlanStale(f"plan {plan_id} names files that must not be written: {unsafe}")
     return payload
+
+
+def _load_manifest(work_dir: Path, apply_id: str) -> tuple[Manifest, Path]:
+    _check_id(apply_id, "apply")
+    backup_dir = work_dir / "backups" / apply_id
+    if not backup_dir.is_dir():
+        raise PlanNotFound(f"no apply {apply_id}")
+    try:
+        return read_manifest(backup_dir), backup_dir
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise UndoRefused(f"manifest of {apply_id} could not be read: {error}") from error
 
 
 def _verify_base(config_dir: Path, base_hashes: dict[str, str]) -> None:
@@ -282,9 +318,15 @@ def _rename_in_registry(hass: HomeAssistant, ordered: list[Rename], done: list[R
         done.append(rename)
 
 
-def _undo_registry(hass: HomeAssistant, done: list[Rename]) -> None:
+def _undo_registry(hass: HomeAssistant, done: list[Rename]) -> list[str]:
+    """Reverse completed renames newest first; return what could not be reverted."""
+    problems: list[str] = []
     for rename in reversed(done):
-        rename_entity(hass, rename.to_id, rename.from_id)
+        try:
+            rename_entity(hass, rename.to_id, rename.from_id)
+        except Exception as error:  # noqa: BLE001 - keep reverting the others
+            problems.append(f"{rename.to_id} -> {rename.from_id}: {error}")
+    return problems
 
 
 async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
@@ -322,52 +364,71 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
         renames=renames,
         files=[FileRecord(str(root / rel), before[rel]) for rel in changed],
     )
+    stale = [rel for rel in changed if before[rel] != payload["base_hashes"].get(rel)]
+    if stale:
+        await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "rolled_back")
+        raise PlanStale(f"{', '.join(stale)} changed while the apply started; plan again")
     await hass.async_add_executor_job(write_manifest, backup_dir, manifest)
 
-    async def restore() -> None:
-        if manifest.files:
-            await hass.async_add_executor_job(restore_files, manifest, backup_dir)
+    done: list[Rename] = []
+    files_written = False
+
+    async def roll_back() -> list[str]:
+        problems = _undo_registry(hass, done)
+        if files_written and manifest.files:
+            try:
+                await hass.async_add_executor_job(restore_files, manifest, backup_dir)
+            except Exception as error:  # noqa: BLE001 - reported to the caller
+                problems.append(f"files could not be restored: {error}")
+        status = "failed" if problems else "rolled_back"
+        try:
+            await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, status)
+        except Exception:
+            _LOGGER.exception("could not record the outcome of apply %s", apply_id)
+        return problems
 
     try:
         if new_texts:
+            files_written = True
             await hass.async_add_executor_job(_write_texts, config_dir, new_texts)
-            error = await async_check_ha_config_file(hass)
-            if error:
-                await restore()
-                await hass.async_add_executor_job(
-                    _finish_manifest, backup_dir, manifest, "rolled_back"
-                )
-                raise ConfigCheckFailed(error)
-        done: list[Rename] = []
-        try:
-            _rename_in_registry(hass, ordered, done)
-        except Exception as error:
-            _undo_registry(hass, done)
-            await restore()
-            await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "rolled_back")
-            raise ApplyFailed(f"registry rename failed and was rolled back: {error}") from error
-    except RenameError:
-        raise
-    except BaseException:
-        await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "failed")
-        raise
+            error_text = await async_check_ha_config_file(hass)
+            if error_text:
+                raise ConfigCheckFailed(error_text)
+        _rename_in_registry(hass, ordered, done)
+        after = await hass.async_add_executor_job(_hash_files, config_dir, changed)
+        for record in manifest.files:
+            record.sha256_after = after[Path(record.path).relative_to(root).as_posix()]
+        await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "completed")
+    except BaseException as error:
+        problems = await roll_back()
+        if isinstance(error, ConfigCheckFailed) and not problems:
+            raise
+        if not isinstance(error, Exception):
+            raise
+        detail = f"; manual repair needed: {'; '.join(problems)}" if problems else ""
+        raise ApplyFailed(f"apply failed and was rolled back: {error}{detail}") from error
 
-    after = await hass.async_add_executor_job(_hash_files, config_dir, changed)
-    for record in manifest.files:
-        record.sha256_after = after[Path(record.path).relative_to(root).as_posix()]
+    warnings: list[str] = []
     domains, unknown = domains_for_files(changed)
-    needs_restart = bool(await reload_domains(hass, domains)) or unknown
-    await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "completed")
-    return ApplyResult(apply_id, "completed", changed, needs_restart)
+    try:
+        needs_restart = bool(await reload_domains(hass, domains)) or unknown
+    except Exception as error:  # noqa: BLE001 - the change itself is already in place
+        warnings.append(f"reload failed, restart Home Assistant: {error}")
+        needs_restart = True
+    known = registry_entity_ids(hass)
+    warnings.extend(
+        f"{rename.to_id} is missing from the entity registry after the apply"
+        for rename in renames
+        if rename.to_id not in known
+    )
+    return ApplyResult(apply_id, "completed", changed, needs_restart, warnings)
 
 
 async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> ApplyResult:
     """Reverse a completed apply; refuse if files changed since, unless ``force``."""
-    _check_id(apply_id, "apply")
-    backup_dir = _work_dir(hass) / "backups" / apply_id
-    if not backup_dir.is_dir():
-        raise PlanNotFound(f"no apply {apply_id}")
-    manifest = await hass.async_add_executor_job(read_manifest, backup_dir)
+    manifest, backup_dir = await hass.async_add_executor_job(
+        _load_manifest, _work_dir(hass), apply_id
+    )
     if manifest.status != "completed":
         raise UndoRefused(
             f"apply {apply_id} has status {manifest.status}; only completed applies can be undone"
@@ -378,16 +439,27 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
             raise UndoRefused(
                 f"files changed since the apply: {', '.join(changed)}; use force to overwrite"
             )
-    for rename in order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames]):
-        rename_entity(hass, rename.from_id, rename.to_id)
-    if manifest.files:
-        await hass.async_add_executor_job(restore_files, manifest, backup_dir)
+    back = order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames])
+    done: list[Rename] = []
+    try:
+        _rename_in_registry(hass, back, done)
+        if manifest.files:
+            await hass.async_add_executor_job(restore_files, manifest, backup_dir)
+    except Exception as error:
+        problems = _undo_registry(hass, done)
+        detail = f"; manual repair needed: {'; '.join(problems)}" if problems else ""
+        raise UndoRefused(f"undo failed and was reverted: {error}{detail}") from error
     root = Path(hass.config.config_dir).resolve()
     relatives = [Path(record.path).relative_to(root).as_posix() for record in manifest.files]
     domains, unknown = domains_for_files(relatives)
-    needs_restart = bool(await reload_domains(hass, domains)) or unknown
+    warnings: list[str] = []
+    try:
+        needs_restart = bool(await reload_domains(hass, domains)) or unknown
+    except Exception as error:  # noqa: BLE001 - the files are already restored
+        warnings.append(f"reload failed, restart Home Assistant: {error}")
+        needs_restart = True
     await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "undone")
-    return ApplyResult(apply_id, "undone", relatives, needs_restart)
+    return ApplyResult(apply_id, "undone", relatives, needs_restart, warnings)
 
 
 def _changed_since(manifest: Manifest) -> list[str]:

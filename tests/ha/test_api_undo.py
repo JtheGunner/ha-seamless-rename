@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -56,3 +57,39 @@ async def test_undo_unknown_or_malicious_id(hass: HomeAssistant, config_dir: Pat
         await api.undo(hass, "apply-missing")
     with pytest.raises(api.PlanNotFound):
         await api.undo(hass, "../x")
+
+
+async def test_undo_registry_failure_reverts_partial_work(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    result = await _apply(hass, config_dir)
+    with (
+        patch.object(api, "rename_entity", side_effect=ValueError("boom")),
+        pytest.raises(api.UndoRefused, match="boom"),
+    ):
+        await api.undo(hass, result.apply_id)
+    assert (config_dir / "a.yaml").read_text() == "trigger:\n  entity_id: sensor.bar  # keep\n"
+    assert er.async_get(hass).async_get("sensor.bar") is not None
+
+
+async def test_undo_with_damaged_backup_leaves_registry_alone(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    result = await _apply(hass, config_dir)
+    files = config_dir / ".entity_rename_safe" / "backups" / result.apply_id / "files"
+    for copy in files.iterdir():
+        copy.write_text("damaged")
+    with pytest.raises(api.UndoRefused):
+        await api.undo(hass, result.apply_id)
+    assert er.async_get(hass).async_get("sensor.bar") is not None
+    assert er.async_get(hass).async_get("sensor.foo") is None
+
+
+async def test_undo_corrupt_manifest_is_refused(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    result = await _apply(hass, config_dir)
+    manifest = config_dir / ".entity_rename_safe" / "backups" / result.apply_id / "manifest.json"
+    manifest.write_text("{bad")
+    with pytest.raises(api.UndoRefused):
+        await api.undo(hass, result.apply_id)
