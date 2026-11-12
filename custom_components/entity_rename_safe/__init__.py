@@ -4,6 +4,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
+from .ha.recovery import check_incomplete_applies
 from .services import async_register_services
 
 
@@ -11,4 +12,5 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the integration and register its services."""
     hass.data.setdefault(DOMAIN, {})
     async_register_services(hass)
+    await check_incomplete_applies(hass)
     return True

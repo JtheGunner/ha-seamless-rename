@@ -49,7 +49,13 @@ from .lovelace import (
     scan_dashboards,
     write_snapshot,
 )
-from .registry import registry_entity_ids, rename_entity, state_entity_ids
+from .registry import (
+    current_entity_id,
+    registry_entity_ids,
+    registry_uuids,
+    rename_entity,
+    state_entity_ids,
+)
 from .reload import domains_for_files, reload_domains
 
 PLAN_TTL = timedelta(hours=24)
@@ -495,9 +501,12 @@ class _HelperSnapshot:
     entry_id: str
     domain: str
     before: dict[str, Any]
+    expected_after: dict[str, Any]
 
 
-def _prepare_helpers(hass: HomeAssistant, entries: list[dict[str, Any]]) -> list[_HelperSnapshot]:
+def _prepare_helpers(
+    hass: HomeAssistant, entries: list[dict[str, Any]], replace: set[Confidence]
+) -> list[_HelperSnapshot]:
     """Verify each planned helper entry is unchanged and capture its options."""
     snapshots: list[_HelperSnapshot] = []
     for entry in entries:
@@ -511,7 +520,9 @@ def _prepare_helpers(hass: HomeAssistant, entries: list[dict[str, Any]]) -> list
             raise PlanStale(
                 f"helper {entry['entry_id']} changed since the plan was created; plan again"
             )
-        snapshots.append(_HelperSnapshot(entry["entry_id"], entry["domain"], options))
+        found = [_finding_from_dict(item) for item in entry["findings"]]
+        expected = rewrite_json(options, found, replace)
+        snapshots.append(_HelperSnapshot(entry["entry_id"], entry["domain"], options, expected))
     return snapshots
 
 
@@ -524,14 +535,30 @@ def _write_helper_snapshots(
             snap.entry_id,
             snap.domain,
             snap.before,
-            after.get(snap.entry_id, snap.before),
+            after.get(snap.entry_id, snap.expected_after),
         )
         for snap in snapshots
     ]
 
 
+def _running_applies(hass: HomeAssistant) -> set[str]:
+    """IDs of the applies that are executing in this process right now."""
+    running: set[str] = hass.data.setdefault(DOMAIN, {}).setdefault("running_applies", set())
+    return running
+
+
 async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     """Apply a stored plan: back up, rewrite files, check config, rename, reload."""
+    apply_id = f"apply-{dt_util.utcnow():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
+    running = _running_applies(hass)
+    running.add(apply_id)
+    try:
+        return await _apply(hass, plan_id, apply_id)
+    finally:
+        running.discard(apply_id)
+
+
+async def _apply(hass: HomeAssistant, plan_id: str, apply_id: str) -> ApplyResult:
     work_dir = _work_dir(hass)
     config_dir = Path(hass.config.config_dir)
     payload = await hass.async_add_executor_job(_load_plan, work_dir, plan_id)
@@ -554,10 +581,9 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     new_texts, _ = await hass.async_add_executor_job(_render_all, config_dir, findings, replace)
     changed = sorted(new_texts)
     dashboards = await _prepare_dashboards(hass, payload["lovelace"], replace)
-    helper_snapshots = _prepare_helpers(hass, payload["helpers"])
+    helper_snapshots = _prepare_helpers(hass, payload["helpers"], replace)
 
     root = config_dir.resolve()
-    apply_id = f"apply-{dt_util.utcnow():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
     backup_dir = await hass.async_add_executor_job(
         create_backup, work_dir, apply_id, [root / relative for relative in changed]
     )
@@ -566,7 +592,15 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
         apply_id=apply_id,
         created_at=dt_util.utcnow().isoformat(),
         renames=renames,
-        files=[FileRecord(str(root / rel), before[rel]) for rel in changed],
+        files=[
+            FileRecord(
+                str(root / rel),
+                before[rel],
+                hashlib.sha256(new_texts[rel].encode("utf-8")).hexdigest(),
+            )
+            for rel in changed
+        ],
+        entity_registry_ids=registry_uuids(hass, [rename.from_id for rename in renames]),
     )
     stale = [rel for rel in changed if before[rel] != payload["base_hashes"].get(rel)]
     if stale:
@@ -684,13 +718,21 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
 
 
 async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> ApplyResult:
-    """Reverse a completed apply; refuse if files changed since, unless ``force``."""
+    """Reverse a completed apply; refuse if files changed since, unless ``force``.
+
+    An apply that was interrupted (status ``in_progress``, e.g. by a crash) is rolled back to
+    the state before it started; the registry is repaired from the recorded registry UUIDs.
+    """
     manifest, backup_dir = await hass.async_add_executor_job(
         _load_manifest, _work_dir(hass), apply_id
     )
-    if manifest.status != "completed":
+    if apply_id in _running_applies(hass):
+        raise UndoRefused(f"apply {apply_id} is still running")
+    recovering = manifest.status == "in_progress"
+    if manifest.status != "completed" and not recovering:
         raise UndoRefused(
-            f"apply {apply_id} has status {manifest.status}; only completed applies can be undone"
+            f"apply {apply_id} has status {manifest.status}; "
+            "only completed or interrupted applies can be undone"
         )
     unknown_names = [n for n in manifest.snapshots if not n.startswith(("dashboards/", "helpers/"))]
     if unknown_names:
@@ -709,14 +751,19 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
     except ValueError as error:
         raise UndoRefused(str(error)) from error
     if not force:
-        changed = await hass.async_add_executor_job(_changed_since, manifest)
-        changed += await _dashboards_changed_since(hass, snapshots)
-        changed += _helpers_changed_since(hass, helper_snaps)
+        changed = await hass.async_add_executor_job(_changed_since, manifest, recovering)
+        changed += await _dashboards_changed_since(hass, snapshots, recovering)
+        changed += _helpers_changed_since(hass, helper_snaps, recovering)
         if changed:
             raise UndoRefused(
                 f"changed since the apply: {', '.join(changed)}; use force to overwrite"
             )
-    back = order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames])
+    if recovering:
+        steps, recovery_warnings = _interrupted_steps(hass, manifest)
+        back = order_renames(steps)
+    else:
+        recovery_warnings = []
+        back = order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames])
     done: list[Rename] = []
     restored: list[dict[str, Any]] = []
     restored_helpers: list[dict[str, Any]] = []
@@ -747,16 +794,20 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
     root = Path(hass.config.config_dir).resolve()
     relatives = [Path(record.path).relative_to(root).as_posix() for record in manifest.files]
     domains, unknown = domains_for_files(relatives)
-    warnings: list[str] = []
+    warnings: list[str] = list(recovery_warnings)
     try:
         needs_restart = bool(await reload_domains(hass, domains)) or unknown
     except Exception as error:  # noqa: BLE001 - the files are already restored
         warnings.append(f"reload failed, restart Home Assistant: {error}")
         needs_restart = True
-    await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "undone")
+    final_status = "rolled_back" if recovering else "undone"
+    try:
+        await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, final_status)
+    except OSError as error:
+        warnings.append(f"the manifest could not be updated: {error}")
     return ApplyResult(
         apply_id,
-        "undone",
+        final_status,
         relatives,
         [DashboardRef(snapshot["url_path"]).label for snapshot in snapshots],
         [snap["entry_id"] for snap in helper_snaps],
@@ -765,8 +816,37 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
     )
 
 
+def _interrupted_steps(hass: HomeAssistant, manifest: Manifest) -> tuple[list[Rename], list[str]]:
+    """Renames that put every entity of an interrupted apply back to its old ID, and warnings.
+
+    An entity is warned about when it cannot be located (no recorded UUID, or no longer in
+    the registry) or sits at an ID that is neither its old nor its new one.
+    """
+    steps: list[Rename] = []
+    warnings: list[str] = []
+    for rename in manifest.renames:
+        uuid_ = manifest.entity_registry_ids.get(rename.from_id)
+        current = current_entity_id(hass, uuid_) if uuid_ else None
+        if current is None:
+            warnings.append(f"{rename.from_id} could not be located in the registry; check it")
+        elif current not in (rename.from_id, rename.to_id) and TEMP_ID_PREFIX not in current:
+            warnings.append(f"{rename.from_id} was found as {current}; it is moved back anyway")
+        if current is not None and current != rename.from_id:
+            steps.append(Rename(current, rename.from_id))
+    return steps, warnings
+
+
+def _accepted(
+    current: str, recorded_before: str | None, recorded_after: str | None, recovering: bool
+) -> bool:
+    """True if ``current`` is a state the apply itself could have produced."""
+    if current == recorded_after:
+        return True
+    return recovering and current == recorded_before
+
+
 async def _dashboards_changed_since(
-    hass: HomeAssistant, snapshots: list[dict[str, Any]]
+    hass: HomeAssistant, snapshots: list[dict[str, Any]], recovering: bool = False
 ) -> list[str]:
     changed: list[str] = []
     for snapshot in snapshots:
@@ -776,12 +856,16 @@ async def _dashboards_changed_since(
         except AdapterUnavailable:
             changed.append(f"dashboard {ref.label}")
             continue
-        if digest != snapshot["sha256_after"]:
+        if not _accepted(
+            digest, snapshot.get("sha256_before"), snapshot["sha256_after"], recovering
+        ):
             changed.append(f"dashboard {ref.label}")
     return changed
 
 
-def _helpers_changed_since(hass: HomeAssistant, snapshots: list[dict[str, Any]]) -> list[str]:
+def _helpers_changed_since(
+    hass: HomeAssistant, snapshots: list[dict[str, Any]], recovering: bool = False
+) -> list[str]:
     changed: list[str] = []
     for snap in snapshots:
         try:
@@ -789,17 +873,20 @@ def _helpers_changed_since(hass: HomeAssistant, snapshots: list[dict[str, Any]])
         except AdapterUnavailable:
             changed.append(f"helper {snap['entry_id']}")
             continue
-        if digest != snap["sha256_after"]:
+        if not _accepted(digest, snap.get("sha256_before"), snap["sha256_after"], recovering):
             changed.append(f"helper {snap['entry_id']}")
     return changed
 
 
-def _changed_since(manifest: Manifest) -> list[str]:
-    return [
-        record.path
-        for record in manifest.files
-        if not Path(record.path).is_file() or sha256_of(Path(record.path)) != record.sha256_after
-    ]
+def _changed_since(manifest: Manifest, recovering: bool = False) -> list[str]:
+    changed: list[str] = []
+    for record in manifest.files:
+        path = Path(record.path)
+        if not path.is_file() or not _accepted(
+            sha256_of(path), record.sha256_before, record.sha256_after, recovering
+        ):
+            changed.append(record.path)
+    return changed
 
 
 async def audit(hass: HomeAssistant) -> AuditReport:
