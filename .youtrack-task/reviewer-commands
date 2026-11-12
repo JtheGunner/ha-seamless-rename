@@ -1,0 +1,8 @@
+# Commands the read-only reviewer of the youtrack-task review gate may run, on top of its built-in allowlist.
+# One whole command per line, matched exactly. The file is read from the base branch, so a change takes
+# effect once it is merged.
+uv run pytest -q tests
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy custom_components
+node --test tests/panel/*.test.mjs
