@@ -83,12 +83,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "External search folders",
-        "description": "Folders outside the Home Assistant configuration (Node-RED, pyscript, AppDaemon, Grafana, ...) that are searched for the old entity IDs. Hits are only reported, never changed.",
+        "title": "Options",
+        "description": "Show the panel in the sidebar and choose folders outside the Home Assistant configuration (Node-RED, pyscript, AppDaemon, Grafana, ...) that are searched for the old entity IDs. Hits are only reported, never changed.",
         "data": {
+          "show_panel": "Show panel in sidebar",
           "external_paths": "Folders"
         },
         "data_description": {
+          "show_panel": "Turn this off to hide the Seamless Rename entry in the sidebar. Services and the websocket API keep working.",
           "external_paths": "Absolute folder paths, one per entry."
         }
       }

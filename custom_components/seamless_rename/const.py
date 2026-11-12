@@ -3,6 +3,8 @@
 DOMAIN = "seamless_rename"
 WORK_DIR_NAME = ".seamless_rename"
 CONF_EXTERNAL_PATHS = "external_paths"
+CONF_SHOW_PANEL = "show_panel"
+DATA_PANEL_URL = "panel_url"
 
 MAX_EXTERNAL_FILE_BYTES = 2 * 1024 * 1024
 MAX_EXTERNAL_HITS = 500

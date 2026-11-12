@@ -83,12 +83,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "Externe Suchordner",
-        "description": "Ordner außerhalb der Home-Assistant-Konfiguration (Node-RED, pyscript, AppDaemon, Grafana, ...), die nach den alten Entity-IDs durchsucht werden. Treffer werden nur gemeldet, nie geändert.",
+        "title": "Optionen",
+        "description": "Das Panel in der Seitenleiste anzeigen und Ordner außerhalb der Home-Assistant-Konfiguration (Node-RED, pyscript, AppDaemon, Grafana, ...) wählen, die nach den alten Entity-IDs durchsucht werden. Treffer werden nur gemeldet, nie geändert.",
         "data": {
+          "show_panel": "Panel in der Seitenleiste anzeigen",
           "external_paths": "Ordner"
         },
         "data_description": {
+          "show_panel": "Ausschalten, um den Eintrag Seamless Rename in der Seitenleiste auszublenden. Services und die Websocket-API funktionieren weiterhin.",
           "external_paths": "Absolute Ordnerpfade, einer pro Eintrag."
         }
       }

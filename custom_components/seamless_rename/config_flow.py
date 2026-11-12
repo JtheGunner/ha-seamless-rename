@@ -11,9 +11,9 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import callback
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
+from homeassistant.helpers.selector import BooleanSelector, TextSelector, TextSelectorConfig
 
-from .const import CONF_EXTERNAL_PATHS, DOMAIN, WORK_DIR_NAME
+from .const import CONF_EXTERNAL_PATHS, CONF_SHOW_PANEL, DOMAIN, WORK_DIR_NAME
 
 
 class SeamlessRenameConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -46,13 +46,21 @@ class SeamlessRenameOptionsFlow(OptionsFlow):
             else:
                 errors.update(await self._check_folders(paths))
             if not errors:
-                return self.async_create_entry(data={CONF_EXTERNAL_PATHS: paths})
+                return self.async_create_entry(
+                    data={
+                        CONF_EXTERNAL_PATHS: paths,
+                        CONF_SHOW_PANEL: user_input.get(CONF_SHOW_PANEL, True),
+                    }
+                )
         current = list(self.config_entry.options.get(CONF_EXTERNAL_PATHS, []))
         schema = vol.Schema(
             {
                 vol.Optional(CONF_EXTERNAL_PATHS, default=current): TextSelector(
                     TextSelectorConfig(multiple=True)
-                )
+                ),
+                vol.Optional(
+                    CONF_SHOW_PANEL, default=self.config_entry.options.get(CONF_SHOW_PANEL, True)
+                ): BooleanSelector(),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
