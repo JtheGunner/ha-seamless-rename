@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
       - name: Panel component tests
-        run: node --test tests/panel
+        run: node --test "tests/panel/*.test.mjs"
 
   # Runs the HA tests against the newest Home Assistant pre-release to catch changes in
   # internal APIs early. Advisory: a failure here does not block a merge.

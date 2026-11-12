@@ -33,7 +33,7 @@
         },
         "renames": {
           "name": "Renames",
-          "description": "List of {from, to} pairs for a bulk rename."
+          "description": "List of objects with a from and a to entity ID for a bulk rename."
         }
       }
     },
