@@ -18,6 +18,7 @@ from homeassistant.util import dt as dt_util
 from ..const import DEFAULT_EXCLUDES, WORK_DIR_NAME
 from ..engine.ids import build_domain_pattern, is_valid_entity_id
 from ..engine.jinja_scan import find_pattern_warnings
+from ..engine.json_scan import rewrite_json
 from ..engine.models import Confidence, Finding, Rename
 from ..engine.planner import (
     TEMP_ID_PREFIX,
@@ -37,6 +38,16 @@ from .backup import (
     write_manifest,
 )
 from .files import discover_yaml_files, sha256_of, write_atomic
+from .lovelace import (
+    AdapterUnavailable,
+    DashboardRef,
+    load_dashboard,
+    read_snapshot,
+    render_config,
+    save_dashboard,
+    scan_dashboards,
+    write_snapshot,
+)
 from .registry import registry_entity_ids, rename_entity, state_entity_ids
 from .reload import domains_for_files, reload_domains
 
@@ -110,6 +121,7 @@ class ApplyResult:
     apply_id: str
     status: str
     changed_files: list[str] = field(default_factory=list)
+    changed_dashboards: list[str] = field(default_factory=list)
     restart_required: bool = False
     warnings: list[str] = field(default_factory=list)
 
@@ -226,9 +238,15 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
     _, diff = await hass.async_add_executor_job(
         _render_all, config_dir, findings, set(DEFAULT_REPLACE)
     )
+    dashboard_edits, dashboard_warnings = await scan_dashboards(hass, mapping)
+    for edit in dashboard_edits:
+        new_config = rewrite_json(edit.config, edit.findings, set(DEFAULT_REPLACE))
+        diff += render_diff(
+            f"lovelace/{edit.ref.label}.json", render_config(edit.config), render_config(new_config)
+        )
 
     plan_id = f"plan-{uuid.uuid4().hex[:12]}"
-    warnings = [*preflight.warnings, *scan_warnings]
+    warnings = [*preflight.warnings, *scan_warnings, *dashboard_warnings]
     summary: dict[str, Any] = {
         "files": {
             relative: {
@@ -236,6 +254,13 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
                 for level in Confidence
             }
             for relative, items in findings.items()
+        },
+        "dashboards": {
+            edit.ref.label: {
+                level.value: sum(1 for item in edit.findings if item.confidence is level)
+                for level in Confidence
+            }
+            for edit in dashboard_edits
         },
         "renames": len(renames),
     }
@@ -246,6 +271,14 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
         "replace": [level.value for level in DEFAULT_REPLACE],
         "base_hashes": hashes,
         "findings": {rel: [asdict(item) for item in items] for rel, items in findings.items()},
+        "lovelace": [
+            {
+                "url_path": edit.ref.url_path,
+                "base_hash": edit.base_hash,
+                "findings": [asdict(item) for item in edit.findings],
+            }
+            for edit in dashboard_edits
+        ],
         "blockers": preflight.blockers,
         "warnings": warnings,
         "summary": summary,
@@ -274,7 +307,15 @@ def _load_plan(work_dir: Path, plan_id: str) -> dict[str, Any]:
         payload: dict[str, Any] = json.loads(path.read_text())
         if payload.get("plan_hash") != _canonical_hash(payload):
             raise PlanStale(f"plan {plan_id} was altered after it was created")
-        for key in ("blockers", "created_at", "renames", "replace", "findings", "base_hashes"):
+        for key in (
+            "blockers",
+            "created_at",
+            "renames",
+            "replace",
+            "findings",
+            "base_hashes",
+            "lovelace",
+        ):
             if key not in payload:
                 raise PlanStale(f"plan {plan_id} is incomplete: '{key}' is missing")
     except (OSError, ValueError, AttributeError) as error:
@@ -356,6 +397,37 @@ def _undo_registry(hass: HomeAssistant, done: list[Rename]) -> list[str]:
     return problems
 
 
+@dataclass(frozen=True)
+class _DashboardChange:
+    ref: DashboardRef
+    before: dict[str, Any]
+    after: dict[str, Any]
+
+
+async def _prepare_dashboards(
+    hass: HomeAssistant, entries: list[dict[str, Any]], replace: set[Confidence]
+) -> list[_DashboardChange]:
+    """Re-read each planned dashboard, verify its hash and compute the new configuration."""
+    changes: list[_DashboardChange] = []
+    for entry in entries:
+        ref = DashboardRef(entry["url_path"])
+        try:
+            config, digest = await load_dashboard(hass, ref)
+        except AdapterUnavailable as error:
+            raise PlanStale(f"dashboard {ref.label} cannot be read: {error}; plan again") from error
+        if digest != entry["base_hash"]:
+            raise PlanStale(f"dashboard {ref.label} changed since the plan was created; plan again")
+        found = [_finding_from_dict(item) for item in entry["findings"]]
+        after = rewrite_json(config, found, replace)
+        if after != config:
+            changes.append(_DashboardChange(ref, config, after))
+    return changes
+
+
+def _write_snapshots(backup_dir: Path, changes: list[_DashboardChange]) -> list[str]:
+    return [write_snapshot(backup_dir, c.ref, c.before, c.after) for c in changes]
+
+
 async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     """Apply a stored plan: back up, rewrite files, check config, rename, reload."""
     work_dir = _work_dir(hass)
@@ -378,6 +450,7 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     replace = {Confidence(level) for level in payload["replace"]}
     new_texts, _ = await hass.async_add_executor_job(_render_all, config_dir, findings, replace)
     changed = sorted(new_texts)
+    dashboards = await _prepare_dashboards(hass, payload["lovelace"], replace)
 
     root = config_dir.resolve()
     apply_id = f"apply-{dt_util.utcnow():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
@@ -395,13 +468,23 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     if stale:
         await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "rolled_back")
         raise PlanStale(f"{', '.join(stale)} changed while the apply started; plan again")
+    if dashboards:
+        manifest.snapshots = await hass.async_add_executor_job(
+            _write_snapshots, backup_dir, dashboards
+        )
     await hass.async_add_executor_job(write_manifest, backup_dir, manifest)
 
     done: list[Rename] = []
+    saved: list[_DashboardChange] = []
     files_written = False
 
     async def roll_back() -> list[str]:
         problems = _undo_registry(hass, done)
+        for change in reversed(saved):
+            try:
+                await save_dashboard(hass, change.ref, change.before)
+            except AdapterUnavailable as error:
+                problems.append(f"dashboard {change.ref.label} could not be restored: {error}")
         if files_written and manifest.files:
             try:
                 await hass.async_add_executor_job(restore_files, manifest, backup_dir)
@@ -422,6 +505,9 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
             if error_text:
                 raise ConfigCheckFailed(error_text)
         _rename_in_registry(hass, ordered, done)
+        for change in dashboards:
+            await save_dashboard(hass, change.ref, change.after)
+            saved.append(change)
         after = await hass.async_add_executor_job(_hash_files, config_dir, changed)
         for record in manifest.files:
             record.sha256_after = after[Path(record.path).relative_to(root).as_posix()]
@@ -448,7 +534,14 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
         for rename in renames
         if rename.to_id not in known
     )
-    return ApplyResult(apply_id, "completed", changed, needs_restart, warnings)
+    return ApplyResult(
+        apply_id,
+        "completed",
+        changed,
+        [change.ref.label for change in dashboards],
+        needs_restart,
+        warnings,
+    )
 
 
 async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> ApplyResult:
@@ -460,20 +553,37 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
         raise UndoRefused(
             f"apply {apply_id} has status {manifest.status}; only completed applies can be undone"
         )
+    try:
+        snapshots = [
+            await hass.async_add_executor_job(read_snapshot, backup_dir, name)
+            for name in manifest.snapshots
+        ]
+    except ValueError as error:
+        raise UndoRefused(str(error)) from error
     if not force:
         changed = await hass.async_add_executor_job(_changed_since, manifest)
+        changed += await _dashboards_changed_since(hass, snapshots)
         if changed:
             raise UndoRefused(
-                f"files changed since the apply: {', '.join(changed)}; use force to overwrite"
+                f"changed since the apply: {', '.join(changed)}; use force to overwrite"
             )
     back = order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames])
     done: list[Rename] = []
+    restored: list[dict[str, Any]] = []
     try:
+        for snapshot in snapshots:
+            await save_dashboard(hass, DashboardRef(snapshot["url_path"]), snapshot["before"])
+            restored.append(snapshot)
         _rename_in_registry(hass, back, done)
         if manifest.files:
             await hass.async_add_executor_job(restore_files, manifest, backup_dir)
     except Exception as error:
         problems = _undo_registry(hass, done)
+        for snapshot in reversed(restored):
+            try:
+                await save_dashboard(hass, DashboardRef(snapshot["url_path"]), snapshot["after"])
+            except AdapterUnavailable as dashboard_error:
+                problems.append(f"dashboard {snapshot['url_path']} not reverted: {dashboard_error}")
         detail = f"; manual repair needed: {'; '.join(problems)}" if problems else ""
         raise UndoRefused(f"undo failed and was reverted: {error}{detail}") from error
     root = Path(hass.config.config_dir).resolve()
@@ -486,7 +596,30 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
         warnings.append(f"reload failed, restart Home Assistant: {error}")
         needs_restart = True
     await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "undone")
-    return ApplyResult(apply_id, "undone", relatives, needs_restart, warnings)
+    return ApplyResult(
+        apply_id,
+        "undone",
+        relatives,
+        [DashboardRef(snapshot["url_path"]).label for snapshot in snapshots],
+        needs_restart,
+        warnings,
+    )
+
+
+async def _dashboards_changed_since(
+    hass: HomeAssistant, snapshots: list[dict[str, Any]]
+) -> list[str]:
+    changed: list[str] = []
+    for snapshot in snapshots:
+        ref = DashboardRef(snapshot["url_path"])
+        try:
+            _, digest = await load_dashboard(hass, ref)
+        except AdapterUnavailable:
+            changed.append(f"dashboard {ref.label}")
+            continue
+        if digest != snapshot["sha256_after"]:
+            changed.append(f"dashboard {ref.label}")
+    return changed
 
 
 def _changed_since(manifest: Manifest) -> list[str]:
