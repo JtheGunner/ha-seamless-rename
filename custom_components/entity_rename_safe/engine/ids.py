@@ -34,3 +34,17 @@ def build_token_pattern(old_ids: Iterable[str]) -> re.Pattern[str]:
     return re.compile(
         rf"(?:(?<![\w.])states\.|(?<![\w.]))(?P<id>{alternation})(?!\w)",
     )
+
+
+def build_domain_pattern(domains: Iterable[str]) -> re.Pattern[str]:
+    """Build a pattern that finds every entity-ID-shaped token of the given domains.
+
+    Same boundary rules as ``build_token_pattern``. The matched ID is the named group ``id``.
+    """
+    ordered = sorted(set(domains), key=len, reverse=True)
+    if not ordered:
+        return _NEVER_MATCHES
+    alternation = "|".join(re.escape(domain) for domain in ordered)
+    return re.compile(
+        rf"(?:(?<![\w.])states\.|(?<![\w.]))(?P<id>(?:{alternation})\.[\da-z_]+)(?!\w)",
+    )

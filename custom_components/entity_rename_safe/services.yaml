@@ -29,3 +29,11 @@ undo:
       default: false
       selector:
         boolean:
+audit:
+references:
+  fields:
+    entity_id:
+      required: true
+      example: sensor.some_entity
+      selector:
+        text:

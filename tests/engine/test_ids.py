@@ -58,3 +58,16 @@ def test_longest_first() -> None:
         "sensor.foo_bar",
         "sensor.foo",
     ]
+
+
+def test_domain_pattern_finds_only_known_domains() -> None:
+    from custom_components.entity_rename_safe.engine.ids import build_domain_pattern
+
+    pattern = build_domain_pattern(["sensor", "light"])
+    text = "a: sensor.one, b: light.two, c: switch.three, d: xsensor.four, e: states.sensor.five"
+    assert [m.group("id") for m in pattern.finditer(text)] == [
+        "sensor.one",
+        "light.two",
+        "sensor.five",
+    ]
+    assert build_domain_pattern([]).search(text) is None

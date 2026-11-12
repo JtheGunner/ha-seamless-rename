@@ -15,6 +15,8 @@ from .ha import api
 SERVICE_PLAN = "plan"
 SERVICE_APPLY = "apply"
 SERVICE_UNDO = "undo"
+SERVICE_AUDIT = "audit"
+SERVICE_REFERENCES = "references"
 
 PLAN_SCHEMA = vol.Schema(
     vol.All(
@@ -36,6 +38,10 @@ APPLY_SCHEMA = vol.Schema({vol.Required("plan_id"): cv.string})
 UNDO_SCHEMA = vol.Schema(
     {vol.Required("apply_id"): cv.string, vol.Optional("force", default=False): cv.boolean}
 )
+
+
+AUDIT_SCHEMA = vol.Schema({})
+REFERENCES_SCHEMA = vol.Schema({vol.Required("entity_id"): cv.entity_id})
 
 
 def _wrap(error: api.RenameError) -> HomeAssistantError:
@@ -94,12 +100,26 @@ async def _undo(call: ServiceCall) -> dict[str, Any]:
     }
 
 
+async def _audit(call: ServiceCall) -> dict[str, Any]:
+    return (await api.audit(call.hass)).to_response()
+
+
+async def _references(call: ServiceCall) -> dict[str, Any]:
+    try:
+        findings = await api.references(call.hass, call.data["entity_id"])
+    except ValueError as error:
+        raise ServiceValidationError(str(error)) from error
+    return {"references": api.findings_response(findings)}
+
+
 def async_register_services(hass: HomeAssistant) -> None:
     """Register the admin-only services."""
     for name, handler, schema in (
         (SERVICE_PLAN, _plan, PLAN_SCHEMA),
         (SERVICE_APPLY, _apply, APPLY_SCHEMA),
         (SERVICE_UNDO, _undo, UNDO_SCHEMA),
+        (SERVICE_AUDIT, _audit, AUDIT_SCHEMA),
+        (SERVICE_REFERENCES, _references, REFERENCES_SCHEMA),
     ):
         async_register_admin_service(
             hass, DOMAIN, name, handler, schema, supports_response=SupportsResponse.ONLY

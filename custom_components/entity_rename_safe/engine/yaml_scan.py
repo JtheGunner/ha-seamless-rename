@@ -1,6 +1,7 @@
 """Find entity ID references in YAML source text without re-serialising it."""
 
 import bisect
+import re
 from collections.abc import Mapping
 
 import yaml
@@ -58,8 +59,13 @@ def _classify(scalar: _Scalar, hit_start: int, hit_end: int, old_id: str, text: 
     return classify(scalar.value, old_id, scalar.key, jinja)
 
 
-def scan_yaml(text: str, path: str, mapping: Mapping[str, str]) -> list[Finding]:
+def scan_yaml(
+    text: str, path: str, mapping: Mapping[str, str], pattern: re.Pattern[str] | None = None
+) -> list[Finding]:
     """Find every reference to a key of ``mapping`` in ``text``.
+
+    ``pattern`` replaces the pattern built from ``mapping``; IDs it finds that are not in
+    ``mapping`` are reported with ``new`` equal to ``old`` (used by the read-only audit).
 
     Hits outside any scalar span (comments) and every hit in a file that does not parse
     are reported as ``UNCERTAIN`` so they are visible but never replaced by default.
@@ -67,7 +73,7 @@ def scan_yaml(text: str, path: str, mapping: Mapping[str, str]) -> list[Finding]
     scalars = _collect_scalars(text)
     starts = [scalar.start for scalar in scalars] if scalars is not None else []
     findings: list[Finding] = []
-    for match in build_token_pattern(mapping).finditer(text):
+    for match in (pattern or build_token_pattern(mapping)).finditer(text):
         start, end = match.span("id")
         old_id = match.group("id")
         scalar = None
@@ -82,7 +88,7 @@ def scan_yaml(text: str, path: str, mapping: Mapping[str, str]) -> list[Finding]
                 location=path,
                 line=text.count("\n", 0, start) + 1,
                 old=old_id,
-                new=mapping[old_id],
+                new=mapping.get(old_id, old_id),
                 confidence=confidence,
                 offset=start,
                 length=end - start,

@@ -16,6 +16,7 @@ from homeassistant.helpers.check_config import async_check_ha_config_file
 from homeassistant.util import dt as dt_util
 
 from ..const import DEFAULT_EXCLUDES, WORK_DIR_NAME
+from ..engine.ids import build_domain_pattern, is_valid_entity_id
 from ..engine.jinja_scan import find_pattern_warnings
 from ..engine.models import Confidence, Finding, Rename
 from ..engine.planner import (
@@ -113,6 +114,32 @@ class ApplyResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class AuditReport:
+    """References to entities that exist neither in the registry nor in the state machine."""
+
+    dead: dict[str, list[Finding]] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "dead": {entity_id: findings_response(items) for entity_id, items in self.dead.items()},
+            "warnings": self.warnings,
+        }
+
+
+def findings_response(findings: list[Finding]) -> list[dict[str, Any]]:
+    return [
+        {
+            "file": finding.location,
+            "line": finding.line,
+            "confidence": finding.confidence.value,
+            "text": finding.old,
+        }
+        for finding in findings
+    ]
+
+
 def _work_dir(hass: HomeAssistant) -> Path:
     return Path(hass.config.config_dir) / WORK_DIR_NAME
 
@@ -132,7 +159,7 @@ def _finding_from_dict(data: dict[str, Any]) -> Finding:
 
 
 def _scan_files(
-    config_dir: Path, mapping: dict[str, str]
+    config_dir: Path, mapping: dict[str, str], pattern: re.Pattern[str] | None = None
 ) -> tuple[dict[str, list[Finding]], dict[str, str], list[str]]:
     """Scan every YAML file; return findings, base hashes and warnings per relative path."""
     root = config_dir.resolve()
@@ -146,7 +173,7 @@ def _scan_files(
         except (UnicodeDecodeError, OSError) as error:
             warnings.append(f"{relative}: could not be read and was skipped ({error})")
             continue
-        found = scan_yaml(text, relative, mapping)
+        found = scan_yaml(text, relative, mapping, pattern)
         for warning in find_pattern_warnings(text, list(mapping)):
             warnings.append(f"{relative}: {warning}")
         if found:
@@ -468,3 +495,38 @@ def _changed_since(manifest: Manifest) -> list[str]:
         for record in manifest.files
         if not Path(record.path).is_file() or sha256_of(Path(record.path)) != record.sha256_after
     ]
+
+
+async def audit(hass: HomeAssistant) -> AuditReport:
+    """List references in the YAML files to entities that do not exist. Writes nothing.
+
+    Only IDs of a domain that the running system knows are considered, and IDs that are
+    registered services (``light.turn_on``) are skipped. Dynamically built IDs are not found.
+    """
+    known = registry_entity_ids(hass) | state_entity_ids(hass)
+    domains = {entity_id.split(".", 1)[0] for entity_id in known}
+    pattern = build_domain_pattern(domains)
+    findings, _, warnings = await hass.async_add_executor_job(
+        _scan_files, Path(hass.config.config_dir), {}, pattern
+    )
+    dead: dict[str, list[Finding]] = {}
+    for items in findings.values():
+        for finding in items:
+            domain, object_part = finding.old.split(".", 1)
+            if finding.old in known or hass.services.has_service(domain, object_part):
+                continue
+            dead.setdefault(finding.old, []).append(finding)
+    return AuditReport(dead=dict(sorted(dead.items())), warnings=warnings)
+
+
+async def references(hass: HomeAssistant, entity_id: str) -> list[Finding]:
+    """List every place in the YAML files that mentions ``entity_id``. Writes nothing."""
+    if not is_valid_entity_id(entity_id):
+        raise ValueError(f"'{entity_id}' is not a valid entity ID")
+    findings, _, _ = await hass.async_add_executor_job(
+        _scan_files, Path(hass.config.config_dir), {entity_id: entity_id}, None
+    )
+    return sorted(
+        (item for items in findings.values() for item in items),
+        key=lambda item: (item.location, item.line),
+    )
