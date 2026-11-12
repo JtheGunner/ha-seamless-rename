@@ -106,14 +106,13 @@
         "step": {
           "confirm": {
             "title": "Roll back the interrupted rename",
-            "description": "Roll back apply {apply_id}? Files, dashboards, helpers and entity IDs are restored to the state before it started. Files, dashboards or helpers that you changed after the crash are not overwritten: the rollback stops and names them (use the undo service with force to override)."
+            "description": "A rename apply ({apply_id}) did not finish, probably because Home Assistant stopped in the middle of it. Entities, files, dashboards or helpers may be half-changed.\n\nRoll back apply {apply_id}? Files, dashboards, helpers and entity IDs are restored to the state before it started. Files, dashboards or helpers that you changed after the crash are not overwritten: the rollback stops and names them (use the undo service with force to override)."
           }
         },
         "abort": {
           "undo_failed": "Roll back failed: {error}"
         }
-      },
-      "description": "A rename apply ({apply_id}) did not finish, probably because Home Assistant stopped in the middle of it. Entities, files, dashboards or helpers may be half-changed."
+      }
     }
   }
 }

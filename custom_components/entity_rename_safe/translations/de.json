@@ -106,14 +106,13 @@
         "step": {
           "confirm": {
             "title": "Unterbrochene Umbenennung zurückrollen",
-            "description": "Anwendung {apply_id} zurückrollen? Dateien, Dashboards, Helfer und Entity-IDs werden auf den Stand vor dem Start zurückgesetzt. Nach dem Absturz selbst geänderte Dateien, Dashboards oder Helfer werden nicht überschrieben: Das Zurückrollen stoppt und nennt sie (mit dem Undo-Dienst und force erzwingbar)."
+            "description": "Eine Umbenennung ({apply_id}) wurde nicht beendet, vermutlich weil Home Assistant mittendrin gestoppt wurde. Entitäten, Dateien, Dashboards oder Helfer können halb geändert sein.\n\nAnwendung {apply_id} zurückrollen? Dateien, Dashboards, Helfer und Entity-IDs werden auf den Stand vor dem Start zurückgesetzt. Nach dem Absturz selbst geänderte Dateien, Dashboards oder Helfer werden nicht überschrieben: Das Zurückrollen stoppt und nennt sie (mit dem Undo-Dienst und force erzwingbar)."
           }
         },
         "abort": {
           "undo_failed": "Zurückrollen fehlgeschlagen: {error}"
         }
-      },
-      "description": "Eine Umbenennung ({apply_id}) wurde nicht beendet, vermutlich weil Home Assistant mittendrin gestoppt wurde. Entitäten, Dateien, Dashboards oder Helfer können halb geändert sein."
+      }
     }
   }
 }

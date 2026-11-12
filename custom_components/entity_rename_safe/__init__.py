@@ -1,6 +1,7 @@
 """Rename Home Assistant entity IDs and update all consumers safely."""
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
@@ -8,6 +9,8 @@ from .ha.recovery import check_incomplete_applies
 from .panel import async_register_panel
 from .services import async_register_services
 from .websocket import async_register_websocket
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
