@@ -1,0 +1,9 @@
+title: Minimalist
+views:
+  - title: Kitchen
+    path: kitchen
+    cards:
+      - type: entities
+        entities:
+          - sensor.snap_kitchen_volume
+          - sensor.snap_kitchen_label

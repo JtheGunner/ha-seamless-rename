@@ -1,0 +1,20 @@
+# Anonymised sample configuration for the end-to-end test.
+homeassistant:
+  name: Sample Home
+  unit_system: metric
+  time_zone: UTC
+
+default_config:
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+template: !include templates.yaml
+
+lovelace:
+  mode: storage
+  dashboards:
+    lovelace-minimalist:
+      mode: yaml
+      title: Minimalist
+      filename: ui_lovelace_minimalist.yaml
+      show_in_sidebar: true

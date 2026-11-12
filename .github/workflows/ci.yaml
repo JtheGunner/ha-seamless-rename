@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 5 * * 1"
 
 jobs:
   test:
@@ -15,3 +17,16 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy custom_components
       - run: uv run pytest
+
+  # Runs the HA tests against the newest Home Assistant pre-release to catch changes in
+  # internal APIs early. Advisory: a failure here does not block a merge.
+  beta:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.14
+      - name: Upgrade to the Home Assistant pre-release
+        run: uv pip install --prerelease=allow --upgrade pytest-homeassistant-custom-component
+      - run: uv run --no-sync pytest

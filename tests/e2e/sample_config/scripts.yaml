@@ -1,0 +1,9 @@
+show_kitchen_label:
+  alias: Show kitchen label
+  sequence:
+    - action: persistent_notification.create
+      data:
+        message: "{{ states('sensor.snap_kitchen_label') }}"
+    - condition: numeric_state
+      entity_id: sensor.snap_kitchen_volume
+      above: 10

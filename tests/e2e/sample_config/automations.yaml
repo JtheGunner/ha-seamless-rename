@@ -1,0 +1,11 @@
+- alias: Announce kitchen volume
+  id: announce_kitchen_volume
+  description: Reacts to changes of the kitchen volume
+  triggers:
+    - trigger: state
+      entity_id: sensor.snap_kitchen_volume
+  actions:
+    - action: persistent_notification.create
+      data:
+        title: Volume
+        message: "{{ states('sensor.snap_kitchen_volume') }} %"
