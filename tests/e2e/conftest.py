@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from pytest_socket import enable_socket
 
 from . import harness
 
@@ -34,6 +35,8 @@ def ha(e2e_config_dir: Path) -> Iterator[harness.HaClient]:
         pytest.skip("set E2E=1 to run the container tests")
     if shutil.which("docker") is None:
         pytest.skip("docker is not available")
+    # The Home Assistant test plugin blocks sockets; this test talks to a real container.
+    enable_socket()
     with harness.running_container(IMAGE, e2e_config_dir, _free_port()) as client:
         flow = client.request(
             "POST", "/api/config/config_entries/flow", {"handler": "entity_rename_safe"}
