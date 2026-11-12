@@ -191,3 +191,49 @@ async def test_own_entry_is_never_scanned(hass: HomeAssistant, config_dir: Path)
 async def test_snapshot_names_are_validated(config_dir: Path) -> None:
     with pytest.raises(ValueError, match="invalid snapshot"):
         helpers.read_snapshot(config_dir, "../x.json")
+
+
+async def test_helper_not_in_plan_is_not_edited_but_reported(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    add_entity(hass, "sensor.foo")
+    planned = _entry(hass, "min_max", options={"entity_ids": ["sensor.foo"]})
+    plan = await _plan(hass)
+    late = _entry(hass, "group", options={"entities": ["sensor.foo"]})
+
+    result = await api.apply(hass, plan.plan_id)
+
+    assert result.changed_helpers == [planned.entry_id]
+    assert list(late.options["entities"]) == ["sensor.foo"]
+    assert any(late.entry_id in w and "not in the plan" in w for w in result.warnings)
+
+
+async def test_malformed_plan_sections_are_a_plan_error(
+    hass: HomeAssistant, config_dir: Path
+) -> None:
+    import json
+
+    add_entity(hass, "sensor.foo")
+    plan = await _plan(hass)
+    plan_file = config_dir / ".entity_rename_safe" / "plans" / f"{plan.plan_id}.json"
+    data = json.loads(plan_file.read_text())
+    data["helpers"] = [{"entry_id": "x"}]
+    data["plan_hash"] = api._canonical_hash(data)
+    plan_file.write_text(json.dumps(data))
+    with pytest.raises(api.PlanStale, match="malformed"):
+        await api.apply(hass, plan.plan_id)
+
+
+async def test_undo_rejects_unknown_snapshot_names(
+    hass: HomeAssistant, config_dir: Path, check_ok: None
+) -> None:
+    import json
+
+    add_entity(hass, "sensor.foo")
+    result = await api.apply(hass, (await _plan(hass)).plan_id)
+    manifest = config_dir / ".entity_rename_safe" / "backups" / result.apply_id / "manifest.json"
+    data = json.loads(manifest.read_text())
+    data["snapshots"] = ["other/evil.json"]
+    manifest.write_text(json.dumps(data))
+    with pytest.raises(api.UndoRefused, match="unknown snapshots"):
+        await api.undo(hass, result.apply_id)

@@ -324,6 +324,20 @@ def _is_safe_relative(relative: str) -> bool:
     )
 
 
+def _validate_plan_shape(plan_id: str, payload: dict[str, Any]) -> None:
+    """Reject a plan whose dashboard or helper entries lack the fields apply relies on."""
+    required = {
+        "lovelace": ("url_path", "base_hash", "findings"),
+        "helpers": ("entry_id", "domain", "base_hash", "findings"),
+    }
+    for section, keys in required.items():
+        entries = payload[section]
+        if not isinstance(entries, list) or not all(
+            isinstance(entry, dict) and all(key in entry for key in keys) for entry in entries
+        ):
+            raise PlanStale(f"plan {plan_id} has a malformed '{section}' section")
+
+
 def _load_plan(work_dir: Path, plan_id: str) -> dict[str, Any]:
     _check_id(plan_id, "plan")
     path = work_dir / "plans" / f"{plan_id}.json"
@@ -347,6 +361,7 @@ def _load_plan(work_dir: Path, plan_id: str) -> dict[str, Any]:
                 raise PlanStale(f"plan {plan_id} is incomplete: '{key}' is missing")
     except (OSError, ValueError, AttributeError) as error:
         raise PlanStale(f"plan {plan_id} could not be read: {error}") from error
+    _validate_plan_shape(plan_id, payload)
     unsafe = [
         rel for rel in (*payload["base_hashes"], *payload["findings"]) if not _is_safe_relative(rel)
     ]
@@ -550,6 +565,7 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     done: list[Rename] = []
     saved: list[_DashboardChange] = []
     edited_helpers: list[tuple[str, dict[str, Any]]] = []
+    extra_helpers: list[str] = []
     files_written = False
 
     async def roll_back() -> list[str]:
@@ -559,12 +575,12 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
                 helpers.set_options(hass, entry_id, options_before)
             except AdapterUnavailable as error:
                 problems.append(f"helper {entry_id} could not be restored: {error}")
-        problems += _undo_registry(hass, done)
         for change in reversed(saved):
             try:
                 await save_dashboard(hass, change.ref, change.before)
             except AdapterUnavailable as error:
                 problems.append(f"dashboard {change.ref.label} could not be restored: {error}")
+        problems += _undo_registry(hass, done)
         if files_written and manifest.files:
             try:
                 await hass.async_add_executor_job(restore_files, manifest, backup_dir)
@@ -589,8 +605,15 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
             await save_dashboard(hass, change.ref, change.after)
             saved.append(change)
         if helper_snapshots:
+            planned = {snap.entry_id for snap in helper_snapshots}
             fresh = await helpers.scan_entries(hass, mapping)
-            await helpers.apply_entry_edits(hass, fresh, replace, edited_helpers)
+            extra = [
+                plan.entry_id for plan in fresh if plan.findings and plan.entry_id not in planned
+            ]
+            extra_helpers.extend(extra)
+            await helpers.apply_entry_edits(
+                hass, [plan for plan in fresh if plan.entry_id in planned], replace, edited_helpers
+            )
         helper_after = {
             snap.entry_id: helpers.current_options(hass, snap.entry_id)[0]
             for snap in helper_snapshots
@@ -619,6 +642,10 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
     except Exception as error:  # noqa: BLE001 - the change itself is already in place
         warnings.append(f"reload failed, restart Home Assistant: {error}")
         needs_restart = True
+    warnings.extend(
+        f"helper {entry_id} references a renamed entity but was not in the plan; plan again"
+        for entry_id in extra_helpers
+    )
     known = registry_entity_ids(hass)
     warnings.extend(
         f"{rename.to_id} is missing from the entity registry after the apply"
@@ -645,6 +672,9 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
         raise UndoRefused(
             f"apply {apply_id} has status {manifest.status}; only completed applies can be undone"
         )
+    unknown_names = [n for n in manifest.snapshots if not n.startswith(("dashboards/", "helpers/"))]
+    if unknown_names:
+        raise UndoRefused(f"manifest names unknown snapshots: {unknown_names}")
     try:
         snapshots = [
             await hass.async_add_executor_job(read_snapshot, backup_dir, name)
@@ -682,16 +712,16 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
             await hass.async_add_executor_job(restore_files, manifest, backup_dir)
     except Exception as error:
         problems = _undo_registry(hass, done)
-        for snap in reversed(restored_helpers):
-            try:
-                helpers.set_options(hass, snap["entry_id"], snap["after"])
-            except AdapterUnavailable as helper_error:
-                problems.append(f"helper {snap['entry_id']} not reverted: {helper_error}")
         for snapshot in reversed(restored):
             try:
                 await save_dashboard(hass, DashboardRef(snapshot["url_path"]), snapshot["after"])
             except AdapterUnavailable as dashboard_error:
                 problems.append(f"dashboard {snapshot['url_path']} not reverted: {dashboard_error}")
+        for snap in reversed(restored_helpers):
+            try:
+                helpers.set_options(hass, snap["entry_id"], snap["after"])
+            except AdapterUnavailable as helper_error:
+                problems.append(f"helper {snap['entry_id']} not reverted: {helper_error}")
         detail = f"; manual repair needed: {'; '.join(problems)}" if problems else ""
         raise UndoRefused(f"undo failed and was reverted: {error}{detail}") from error
     root = Path(hass.config.config_dir).resolve()
