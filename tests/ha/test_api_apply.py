@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.check_config import HomeAssistantConfig
 
 from custom_components.entity_rename_safe.const import WORK_DIR_NAME
 from custom_components.entity_rename_safe.engine.models import Rename
@@ -75,7 +76,7 @@ async def test_config_check_failure_restores_files_and_keeps_registry(
     plan_id = await _plan(hass, ("sensor.foo", "sensor.bar"))
 
     with (
-        patch(CHECK_PATH, return_value="invalid config"),
+        patch(CHECK_PATH, return_value=HomeAssistantConfig().add_error("invalid config")),
         pytest.raises(api.ConfigCheckFailed, match="invalid config"),
     ):
         await api.apply(hass, plan_id)
@@ -285,3 +286,21 @@ async def test_apply_corrupt_plan_json_is_a_plan_error(
     (config_dir / WORK_DIR_NAME / "plans" / f"{plan_id}.json").write_text("{truncated")
     with pytest.raises(api.PlanStale):
         await api.apply(hass, plan_id)
+
+
+async def test_config_check_result_with_content_but_no_errors_passes(
+    hass: HomeAssistant, config_dir: Path
+) -> None:
+    """The real check returns the parsed configuration, which is truthy even when it is valid."""
+    add_entity(hass, "sensor.foo")
+    target = config_dir / "automations.yaml"
+    target.write_text(AUTOMATIONS)
+    plan_id = await _plan(hass, ("sensor.foo", "sensor.bar"))
+    parsed = HomeAssistantConfig()
+    parsed["homeassistant"] = {"name": "Sample Home"}
+
+    with patch(CHECK_PATH, return_value=parsed):
+        result = await api.apply(hass, plan_id)
+
+    assert result.status == "completed"
+    assert "sensor.bar" in target.read_text()

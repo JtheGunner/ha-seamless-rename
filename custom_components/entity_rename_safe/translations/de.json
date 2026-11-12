@@ -33,7 +33,7 @@
         },
         "renames": {
           "name": "Umbenennungen",
-          "description": "Liste von {from, to}-Paaren für eine Sammelumbenennung."
+          "description": "Liste von Objekten mit je einer from- und einer to-Entity-ID für eine Sammelumbenennung."
         }
       }
     },
