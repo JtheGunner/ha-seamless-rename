@@ -64,7 +64,7 @@ async def ws_plan(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
     connection.send_result(msg["id"], {**result.to_response(), "diff": result.diff})
 
 
-@websocket_command({vol.Required("type"): f"{DOMAIN}/apply", "plan_id": cv.string})
+@websocket_command({vol.Required("type"): f"{DOMAIN}/apply", vol.Required("plan_id"): cv.string})
 @require_admin
 @async_response
 @_guarded

@@ -123,3 +123,33 @@ async def test_audit_and_references_through_websocket(
     await client.send_json({"id": 2, "type": f"{DOMAIN}/references", "entity_id": "sensor.foo"})
     refs = (await client.receive_json())["result"]["references"]
     assert refs[0]["file"].endswith("a.yaml")
+
+
+async def test_apply_without_plan_id_is_invalid_format(
+    hass: HomeAssistant, hass_ws_client, config_dir: Path
+) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": f"{DOMAIN}/apply"})
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "invalid_format"
+
+
+async def test_plan_rejects_pattern_combined_with_from(
+    hass: HomeAssistant, hass_ws_client, config_dir: Path
+) -> None:
+    assert await async_setup_component(hass, DOMAIN, {})
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {
+            "id": 1,
+            "type": f"{DOMAIN}/plan",
+            "from": "sensor.a",
+            "to": "sensor.b",
+            "pattern": {"match": "a", "replace": "b"},
+        }
+    )
+    response = await client.receive_json()
+    assert response["success"] is False
+    assert response["error"]["code"] == "invalid_request"
