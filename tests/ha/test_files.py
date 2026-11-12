@@ -36,6 +36,19 @@ def test_discovers_yaml_and_yml_and_applies_default_excludes(tmp_path: Path) -> 
     assert _names(root, found) == {"automations.yaml", "packages/music.yml"}
 
 
+def test_default_excludes_skip_editor_folders_backups_and_macos_metadata(tmp_path: Path) -> None:
+    root = tmp_path / "config"
+    _touch(root / "automations.yaml")
+    _touch(root / "views" / "kitchen.yaml")
+    _touch(root / "._automations.yaml")
+    _touch(root / "views" / "._kitchen.yaml")
+    _touch(root / ".vscode" / "User" / "History" / "abc" / "0n07.yaml")
+    _touch(root / ".idea" / "workspace.yaml")
+    _touch(root / ".ha_mcp" / "backups" / "dashboard.lovelace.yaml")
+    found = discover_yaml_files(root, DEFAULT_EXCLUDES)
+    assert _names(root, found) == {"automations.yaml", "views/kitchen.yaml"}
+
+
 def test_custom_excludes_support_globs(tmp_path: Path) -> None:
     root = tmp_path / "config"
     _touch(root / "a.yaml")

@@ -15,6 +15,11 @@ DEFAULT_EXCLUDES: tuple[str, ...] = (
     ".cloud",
     WORK_DIR_NAME,
     "secrets.yaml",
+    # Editor history, tool backups and macOS AppleDouble files are copies, not live config.
+    ".vscode",
+    ".idea",
+    ".ha_mcp",
+    "._*",
 )
 
 # Folders and files never searched in external paths: the usual excludes plus tool folders and
