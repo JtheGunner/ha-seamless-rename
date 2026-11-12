@@ -99,6 +99,20 @@
       "protected_path": "Dieser Ordner gehört zum internen Speicher von Home Assistant und kann nicht durchsucht werden."
     }
   },
+  "exceptions": {
+    "rename_rejected": { "message": "Die Umbenennung wurde abgelehnt: {error}" },
+    "plan_not_found": { "message": "Dieser Plan oder dieses Backup existiert nicht: {error}" },
+    "plan_blocked": { "message": "Der Plan hat Blocker und kann nicht angewendet werden: {error}" },
+    "plan_stale": { "message": "Eine Datei hat sich seit der Planung geändert, bitte neu planen: {error}" },
+    "plan_expired": { "message": "Der Plan ist zu alt, bitte neu planen: {error}" },
+    "config_check_failed": {
+      "message": "Home Assistant hat die geänderte Konfiguration abgelehnt, die Dateien wurden wiederhergestellt: {error}"
+    },
+    "apply_failed": { "message": "Die Umbenennung ist fehlgeschlagen und wurde zurückgerollt: {error}" },
+    "unknown_finding": { "message": "Die Auswahl enthält einen Fund, der nicht zum Plan gehört: {error}" },
+    "undo_refused": { "message": "Das Rückgängigmachen wurde abgelehnt: {error}" },
+    "invalid_request": { "message": "Die Anfrage ist ungültig: {error}" }
+  },
   "issues": {
     "incomplete_apply": {
       "title": "Unterbrochene Umbenennung",

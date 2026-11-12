@@ -121,6 +121,8 @@ class UnknownFinding(RenameError):
 class UndoRefused(RenameError):
     """The undo is not allowed in the current state."""
 
+    code = "undo_refused"
+
 
 @dataclass(frozen=True)
 class PatternSpec:

@@ -67,7 +67,7 @@ test("every message code the backend emits has a translation", () => {
   for (const code of codes) assert.ok(TRANSLATIONS.en[`message.${code}`], code);
   for (const key of [
     "plan_not_found", "plan_blocked", "plan_stale", "plan_expired", "config_check_failed",
-    "apply_failed", "unknown_finding", "invalid_request",
+    "apply_failed", "unknown_finding", "undo_refused", "invalid_request",
   ]) {
     assert.ok(TRANSLATIONS.en[`error.${key}`], key);
   }

@@ -71,6 +71,7 @@ const en = {
   "error.config_check_failed": "Home Assistant rejected the changed configuration; the files were restored.",
   "error.apply_failed": "The rename failed and was rolled back.",
   "error.unknown_finding": "The selection contains a finding that is not part of the plan.",
+  "error.undo_refused": "The undo was refused.",
   "error.invalid_request": "The request is invalid.",
 };
 
@@ -142,6 +143,7 @@ const de = {
     "Home Assistant hat die geänderte Konfiguration abgelehnt; die Dateien wurden wiederhergestellt.",
   "error.apply_failed": "Die Umbenennung ist fehlgeschlagen und wurde zurückgerollt.",
   "error.unknown_finding": "Die Auswahl enthält einen Fund, der nicht zum Plan gehört.",
+  "error.undo_refused": "Das Rückgängigmachen wurde abgelehnt.",
   "error.invalid_request": "Die Anfrage ist ungültig.",
 };
 

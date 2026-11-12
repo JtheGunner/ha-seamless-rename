@@ -50,7 +50,21 @@ REFERENCES_SCHEMA = vol.Schema({vol.Required("entity_id"): cv.entity_id})
 
 
 def _wrap(error: api.RenameError) -> HomeAssistantError:
-    return ServiceValidationError(str(error))
+    return ServiceValidationError(
+        str(error),
+        translation_domain=DOMAIN,
+        translation_key=error.code,
+        translation_placeholders={"error": str(error)},
+    )
+
+
+def _invalid(error: ValueError) -> HomeAssistantError:
+    return ServiceValidationError(
+        str(error),
+        translation_domain=DOMAIN,
+        translation_key="invalid_request",
+        translation_placeholders={"error": str(error)},
+    )
 
 
 async def _plan(call: ServiceCall) -> dict[str, Any]:
@@ -65,7 +79,7 @@ async def _plan(call: ServiceCall) -> dict[str, Any]:
         )
         result = await api.plan(call.hass, request)
     except ValueError as error:
-        raise ServiceValidationError(str(error)) from error
+        raise _invalid(error) from error
     return result.to_response()
 
 
@@ -93,7 +107,7 @@ async def _references(call: ServiceCall) -> dict[str, Any]:
     try:
         findings = await api.references(call.hass, call.data["entity_id"])
     except ValueError as error:
-        raise ServiceValidationError(str(error)) from error
+        raise _invalid(error) from error
     return {"references": api.findings_response(findings)}
 
 
