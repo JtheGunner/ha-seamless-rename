@@ -31,7 +31,7 @@ every consumer it can find, in one safe step:
 | ✅ | **Apply**   | Backs up, rewrites the planned text spans, renames in the registry, reloads what it can.  |
 | ↩️ | **Undo**    | Restores files, dashboards, helpers and entity IDs of any completed apply.                |
 | 🩺 | **Audit**   | Lists references to entities that do not exist (read-only).                               |
-| 🔗 | **References** | Shows every consumer of one entity — "what would break?" (read-only).                  |
+| 🔗 | **References** | Shows every consumer of one entity — "what would break?" (read-only).                |
 
 It works with and without GitOps. Safety (backup, undo) never depends on git.
 
@@ -129,8 +129,8 @@ data:
 
 Apply verifies that nothing changed since the plan, writes a backup, edits the files, runs the
 configuration check, renames the entities, updates dashboards and helpers, and reloads the
-affected domains. Domains without a reload service are listed as `restart_required`. Any failure
-rolls everything back.
+affected domains. The response sets `restart_required: true` when a domain has no reload service
+or a reload fails. Any failure before that point rolls everything back.
 
 ### 3. Undo
 
@@ -187,7 +187,8 @@ and offers to undo the half-finished rename.
 - IDs are matched with word boundaries, longest first, in a single pass: renaming `a → b` and
   `b → c` never turns `a` into `c`. Swaps use a temporary ID.
 - Dashboards and helpers are changed through Home Assistant's own APIs, never by editing `.storage`.
-- If Home Assistant changes these internal APIs, the adapter falls back to **report-only** and says so.
+- If Home Assistant changes these internal APIs, the affected adapter falls back to **report-only**
+  and says so in the plan warnings.
 
 ---
 
