@@ -2,12 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Entity Rename Safe",
+        "title": "Seamless Rename",
         "description": "Entitäten sicher umbenennen und alle Verwender anpassen."
       }
     },
     "abort": {
-      "already_configured": "Entity Rename Safe ist bereits eingerichtet."
+      "already_configured": "Seamless Rename ist bereits eingerichtet."
     }
   },
   "services": {

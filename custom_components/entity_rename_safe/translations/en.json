@@ -2,12 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Entity Rename Safe",
+        "title": "Seamless Rename",
         "description": "Rename entities safely and update every consumer."
       }
     },
     "abort": {
-      "already_configured": "Entity Rename Safe is already set up."
+      "already_configured": "Seamless Rename is already set up."
     }
   },
   "services": {

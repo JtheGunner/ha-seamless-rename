@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🏷️ Entity Rename Safe
+# 🏷️ Seamless Rename
 
 **Rename a Home Assistant entity — and every place that uses it.**
 Dry-run first, one-click undo, no half-renamed config.
@@ -22,7 +22,7 @@ Dry-run first, one-click undo, no half-renamed config.
 Home Assistant renames only the registry entry. Every reference in YAML, templates,
 dashboards and helpers silently turns into a dead ID.
 
-**Entity Rename Safe** closes that gap. It renames one or many entity IDs and rewrites
+**Seamless Rename** closes that gap. It renames one or many entity IDs and rewrites
 every consumer it can find, in one safe step:
 
 |    | Step        | What happens                                                                              |
@@ -53,7 +53,7 @@ It works with and without GitOps. Safety (backup, undo) never depends on git.
 
 1. In HACS open **⋮ → Custom repositories**.
 2. Add `https://github.com/JtheGunner/ha-seamless-rename` with category **Integration**.
-3. Install **Entity Rename Safe** and restart Home Assistant.
+3. Install **Seamless Rename** and restart Home Assistant.
 
 ### Manual
 
@@ -62,7 +62,7 @@ Home Assistant configuration and restart.
 
 ### Set up
 
-1. Go to **Settings → Devices & services → Add integration → Entity Rename Safe**.
+1. Go to **Settings → Devices & services → Add integration → Seamless Rename**.
 2. Optional: open the integration's **Configure** dialog and list absolute folders
    (for example a Node-RED or AppDaemon folder). They are searched and reported, never changed.
 
