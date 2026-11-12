@@ -9,7 +9,6 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
 
 from .const import DOMAIN
-from .engine.models import Rename
 from .ha import api
 
 SERVICE_PLAN = "plan"
@@ -51,30 +50,11 @@ def _wrap(error: api.RenameError) -> HomeAssistantError:
 async def _plan(call: ServiceCall) -> dict[str, Any]:
     data = call.data
     try:
-        if "pattern" in data:
-            if "from" in data or "to" in data:
-                raise ServiceValidationError("give either from/to or pattern, not both")
-            spec = data["pattern"]
-            request = api.PlanRequest(
-                pattern=api.PatternSpec(spec["match"], spec["replace"], spec.get("domain"))
-            )
-        else:
-            if "to" not in data:
-                raise ServiceValidationError("'to' is required together with 'from'")
-            request = api.PlanRequest(renames=(Rename(data["from"], data["to"]),))
+        request = api.build_plan_request(data.get("from"), data.get("to"), data.get("pattern"))
         result = await api.plan(call.hass, request)
     except ValueError as error:
         raise ServiceValidationError(str(error)) from error
-    return {
-        "plan_id": result.plan_id,
-        "renames": [{"from": r.from_id, "to": r.to_id} for r in result.renames],
-        "blockers": result.blockers,
-        "warnings": result.warnings,
-        "summary": result.summary,
-        "external": [
-            {"path": hit.path, "line": hit.line, "text": hit.text} for hit in result.external
-        ],
-    }
+    return result.to_response()
 
 
 async def _apply(call: ServiceCall) -> dict[str, Any]:
@@ -82,14 +62,7 @@ async def _apply(call: ServiceCall) -> dict[str, Any]:
         result = await api.apply(call.hass, call.data["plan_id"])
     except api.RenameError as error:
         raise _wrap(error) from error
-    return {
-        "apply_id": result.apply_id,
-        "status": result.status,
-        "changed_files": result.changed_files,
-        "changed_dashboards": result.changed_dashboards,
-        "changed_helpers": result.changed_helpers,
-        "restart_required": result.restart_required,
-    }
+    return result.to_response()
 
 
 async def _undo(call: ServiceCall) -> dict[str, Any]:
@@ -97,14 +70,7 @@ async def _undo(call: ServiceCall) -> dict[str, Any]:
         result = await api.undo(call.hass, call.data["apply_id"], force=call.data["force"])
     except api.RenameError as error:
         raise _wrap(error) from error
-    return {
-        "apply_id": result.apply_id,
-        "status": result.status,
-        "changed_files": result.changed_files,
-        "changed_dashboards": result.changed_dashboards,
-        "changed_helpers": result.changed_helpers,
-        "restart_required": result.restart_required,
-    }
+    return result.to_response()
 
 
 async def _audit(call: ServiceCall) -> dict[str, Any]:
