@@ -1,0 +1,8 @@
+- sensor:
+    - name: Snap Kitchen Volume
+      unique_id: snap_kitchen_volume
+      unit_of_measurement: "%"
+      state: "40"
+    - name: Snap Kitchen Label
+      unique_id: snap_kitchen_label
+      state: "{{ 'Volume ' ~ states('sensor.snap_kitchen_volume') }}"

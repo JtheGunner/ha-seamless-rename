@@ -1,0 +1,31 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1"
+
+jobs:
+  roundtrip:
+    name: Roundtrip (${{ matrix.channel }})
+    runs-on: ubuntu-latest
+    # The beta run is an early warning for internal API changes, not a merge gate.
+    continue-on-error: ${{ matrix.channel == 'beta' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python 3.14
+      - name: Pull the Home Assistant image
+        run: docker pull ghcr.io/home-assistant/home-assistant:${{ matrix.channel }}
+      - name: Run the container roundtrip
+        env:
+          E2E: "1"
+          E2E_HA_IMAGE: ghcr.io/home-assistant/home-assistant:${{ matrix.channel }}
+        run: uv run pytest tests/e2e -v
