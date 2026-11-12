@@ -1,0 +1,23 @@
+# Living room music automations (anonymised sample)
+- alias: "Music on at arrival"   # keep media_player.snap_living in sync
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.presence_living
+      to: "on"
+  condition:
+    - condition: template
+      value_template: "{{ states('sensor.snap_volume_living') | int > 10 }}"
+  action:
+    - service: media_player.volume_set
+      target:
+        entity_id: media_player.snap_living, media_player.snap_kitchen
+      data:
+        volume_level: 0.3
+    - service: notify.notify
+      data:
+        message: |
+          Playing on media_player.snap_living now.
+          Level: {{ states.sensor.snap_volume_living.state }}
+    - service: script.turn_on
+      target:
+        entity_id: !input player
