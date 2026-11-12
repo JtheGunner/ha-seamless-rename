@@ -26,7 +26,7 @@ def test_plan_apply_audit_undo_roundtrip(ha: HaClient, e2e_config_dir: Path) -> 
     originals = _hashes(e2e_config_dir)
     ha.wait_for_state(OLD_ID, present=True)
 
-    plan = ha.call_service("entity_rename_safe", "plan", {"from": OLD_ID, "to": NEW_ID})
+    plan = ha.call_service("seamless_rename", "plan", {"from": OLD_ID, "to": NEW_ID})
     assert plan["blockers"] == []
     assert set(plan["summary"]["files"]) >= {
         "templates.yaml",
@@ -36,7 +36,7 @@ def test_plan_apply_audit_undo_roundtrip(ha: HaClient, e2e_config_dir: Path) -> 
     }
     assert _hashes(e2e_config_dir) == originals  # a plan never writes
 
-    applied = ha.call_service("entity_rename_safe", "apply", {"plan_id": plan["plan_id"]})
+    applied = ha.call_service("seamless_rename", "apply", {"plan_id": plan["plan_id"]})
     assert applied["status"] == "completed"
     ha.wait_for_state(NEW_ID, present=True)
     ha.wait_for_state(OLD_ID, present=False)
@@ -50,10 +50,10 @@ def test_plan_apply_audit_undo_roundtrip(ha: HaClient, e2e_config_dir: Path) -> 
         assert OLD_ID not in text, name
         assert NEW_ID in text, name
 
-    audit = ha.call_service("entity_rename_safe", "audit", {})
+    audit = ha.call_service("seamless_rename", "audit", {})
     assert audit["dead"] == {}
 
-    undone = ha.call_service("entity_rename_safe", "undo", {"apply_id": applied["apply_id"]})
+    undone = ha.call_service("seamless_rename", "undo", {"apply_id": applied["apply_id"]})
     assert undone["status"] == "undone"
     assert _hashes(e2e_config_dir) == originals
     ha.wait_for_state(OLD_ID, present=True)

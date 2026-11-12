@@ -3,7 +3,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFEST = json.loads((ROOT / "custom_components/entity_rename_safe/manifest.json").read_text())
+MANIFEST = json.loads((ROOT / "custom_components/seamless_rename/manifest.json").read_text())
 
 
 def test_manifest_keys_follow_the_hassfest_order() -> None:
@@ -30,7 +30,7 @@ def test_license_file_names_the_readme_license() -> None:
 
 def test_display_name_is_seamless_rename() -> None:
     assert MANIFEST["name"] == "Seamless Rename"
-    translations_dir = ROOT / "custom_components/entity_rename_safe/translations"
+    translations_dir = ROOT / "custom_components/seamless_rename/translations"
     for language in ("en", "de"):
         translations = json.loads((translations_dir / f"{language}.json").read_text())
         assert translations["config"]["step"]["user"]["title"] == "Seamless Rename"

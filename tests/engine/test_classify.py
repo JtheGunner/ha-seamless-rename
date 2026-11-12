@@ -1,5 +1,5 @@
-from custom_components.entity_rename_safe.engine.classify import classify
-from custom_components.entity_rename_safe.engine.models import Confidence
+from custom_components.seamless_rename.engine.classify import classify
+from custom_components.seamless_rename.engine.models import Confidence
 
 
 def test_quoted_literal_in_query_is_likely() -> None:

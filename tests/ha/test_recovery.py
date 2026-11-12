@@ -9,11 +9,11 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
 
-from custom_components.entity_rename_safe import repairs
-from custom_components.entity_rename_safe.const import DOMAIN, WORK_DIR_NAME
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha import api, recovery
-from custom_components.entity_rename_safe.ha.api import PlanRequest
+from custom_components.seamless_rename import repairs
+from custom_components.seamless_rename.const import DOMAIN, WORK_DIR_NAME
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha import api, recovery
+from custom_components.seamless_rename.ha.api import PlanRequest
 
 from .conftest import add_entity
 

@@ -1,7 +1,7 @@
-"""Constants for the entity_rename_safe integration."""
+"""Constants for the seamless_rename integration."""
 
-DOMAIN = "entity_rename_safe"
-WORK_DIR_NAME = ".entity_rename_safe"
+DOMAIN = "seamless_rename"
+WORK_DIR_NAME = ".seamless_rename"
 CONF_EXTERNAL_PATHS = "external_paths"
 
 MAX_EXTERNAL_FILE_BYTES = 2 * 1024 * 1024

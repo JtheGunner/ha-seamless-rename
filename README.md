@@ -57,7 +57,7 @@ It works with and without GitOps. Safety (backup, undo) never depends on git.
 
 ### Manual
 
-Copy `custom_components/entity_rename_safe/` into the `custom_components/` folder of your
+Copy `custom_components/seamless_rename/` into the `custom_components/` folder of your
 Home Assistant configuration and restart.
 
 ### Set up
@@ -67,11 +67,11 @@ Home Assistant configuration and restart.
    (for example a Node-RED or AppDaemon folder). They are searched and reported, never changed.
 
 > [!IMPORTANT]
-> The integration keeps plans and backups in `/config/.entity_rename_safe/`.
+> The integration keeps plans and backups in `/config/.seamless_rename/`.
 > If your configuration lives in git, add this line to its `.gitignore`:
 >
 > ```gitignore
-> .entity_rename_safe/
+> .seamless_rename/
 > ```
 >
 > The integration never edits `.gitignore` itself.
@@ -88,7 +88,7 @@ All services are admin-only and return a response. Try them in
 Single entity:
 
 ```yaml
-action: entity_rename_safe.plan
+action: seamless_rename.plan
 data:
   from: sensor.living_room_temp
   to: sensor.living_room_temperature
@@ -97,7 +97,7 @@ data:
 Several explicit renames, or a pattern resolved against the registry:
 
 ```yaml
-action: entity_rename_safe.plan
+action: seamless_rename.plan
 data:
   renames:
     - { from: media_player.kitchen, to: media_player.kitchen_speaker }
@@ -105,7 +105,7 @@ data:
 ```
 
 ```yaml
-action: entity_rename_safe.plan
+action: seamless_rename.plan
 data:
   pattern: { match: "^media_player\\.old_(.*)$", replace: "media_player.new_\\1", domain: media_player }
 ```
@@ -121,7 +121,7 @@ confidence) and `external` hits. A plan with blockers cannot be applied. Plans e
 ### 2. Apply
 
 ```yaml
-action: entity_rename_safe.apply
+action: seamless_rename.apply
 data:
   plan_id: plan-0123456789ab
   exclude: []   # optional finding IDs from the plan to leave untouched
@@ -135,7 +135,7 @@ or a reload fails. Any failure before that point rolls everything back.
 ### 3. Undo
 
 ```yaml
-action: entity_rename_safe.undo
+action: seamless_rename.undo
 data:
   apply_id: apply-20261112T031500-1a2b3c
   force: false
@@ -147,11 +147,11 @@ overwrites later edits.
 ### 4. Audit and references
 
 ```yaml
-action: entity_rename_safe.audit
+action: seamless_rename.audit
 ```
 
 ```yaml
-action: entity_rename_safe.references
+action: seamless_rename.references
 data:
   entity_id: sensor.living_room_temperature
 ```
@@ -221,8 +221,8 @@ Layout:
 
 | 📁 | Path                                      | Role                                               |
 |:--:|-------------------------------------------|----------------------------------------------------|
-| 🧮 | `custom_components/entity_rename_safe/engine/` | Pure logic, never imports Home Assistant       |
-| 🔌 | `custom_components/entity_rename_safe/ha/`     | Adapters for registry, files, dashboards, helpers; `api.py` is the one entry point |
+| 🧮 | `custom_components/seamless_rename/engine/` | Pure logic, never imports Home Assistant       |
+| 🔌 | `custom_components/seamless_rename/ha/`     | Adapters for registry, files, dashboards, helpers; `api.py` is the one entry point |
 | 📡 | `services.py`, `websocket.py`                  | Thin wrappers over `ha/api.py`                  |
 | 🖼️ | `panel/`                                       | Vanilla web component, no build step           |
 

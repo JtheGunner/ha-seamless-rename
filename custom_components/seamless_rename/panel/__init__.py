@@ -11,10 +11,10 @@ from ..const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-PANEL_URL_PATH = "entity-rename-safe"
-WEBCOMPONENT_NAME = "entity-rename-safe-panel"
+PANEL_URL_PATH = "seamless-rename"
+WEBCOMPONENT_NAME = "seamless-rename-panel"
 STATIC_URL = f"/{DOMAIN}_static"
-PANEL_FILE = Path(__file__).parent / "entity-rename-safe-panel.js"
+PANEL_FILE = Path(__file__).parent / "seamless-rename-panel.js"
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:

@@ -4,8 +4,8 @@ import test from "node:test";
 import { fakeHass, installDom } from "./dom-harness.mjs";
 
 const registry = installDom();
-const { EntityRenameSafePanel, parseCsv, validateNewId } = await import(
-  "../../custom_components/entity_rename_safe/panel/entity-rename-safe-panel.js"
+const { SeamlessRenamePanel, parseCsv, validateNewId } = await import(
+  "../../custom_components/seamless_rename/panel/seamless-rename-panel.js"
 );
 
 const finding = (id, confidence, extra = {}) => ({
@@ -34,7 +34,7 @@ const plan = (overrides = {}) => ({
 
 function mount(handlers, ids) {
   const hass = fakeHass(handlers, ids);
-  const panel = new EntityRenameSafePanel();
+  const panel = new SeamlessRenamePanel();
   panel.hass = hass;
   return { panel, hass };
 }
@@ -49,7 +49,7 @@ async function previewSingle(panel) {
 }
 
 test("registers the custom element", () => {
-  assert.equal(registry.get("entity-rename-safe-panel"), EntityRenameSafePanel);
+  assert.equal(registry.get("seamless-rename-panel"), SeamlessRenamePanel);
 });
 
 test("renders blockers and warnings", async () => {

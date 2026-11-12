@@ -7,10 +7,10 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha import api, helpers
-from custom_components.entity_rename_safe.ha.api import PlanRequest
-from custom_components.entity_rename_safe.ha.lovelace import AdapterUnavailable
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha import api, helpers
+from custom_components.seamless_rename.ha.api import PlanRequest
+from custom_components.seamless_rename.ha.lovelace import AdapterUnavailable
 
 from .conftest import add_entity
 
@@ -184,7 +184,7 @@ async def test_adapter_unavailable_falls_back_to_report_only(
 
 async def test_own_entry_is_never_scanned(hass: HomeAssistant, config_dir: Path) -> None:
     add_entity(hass, "sensor.foo")
-    _entry(hass, "entity_rename_safe", options={"note": "sensor.foo"})
+    _entry(hass, "seamless_rename", options={"note": "sensor.foo"})
     assert (await _plan(hass)).summary["helpers"] == {}
 
 
@@ -215,7 +215,7 @@ async def test_malformed_plan_sections_are_a_plan_error(
 
     add_entity(hass, "sensor.foo")
     plan = await _plan(hass)
-    plan_file = config_dir / ".entity_rename_safe" / "plans" / f"{plan.plan_id}.json"
+    plan_file = config_dir / ".seamless_rename" / "plans" / f"{plan.plan_id}.json"
     data = json.loads(plan_file.read_text())
     data["helpers"] = [{"entry_id": "x"}]
     data["plan_hash"] = api._canonical_hash(data)
@@ -231,7 +231,7 @@ async def test_undo_rejects_unknown_snapshot_names(
 
     add_entity(hass, "sensor.foo")
     result = await api.apply(hass, (await _plan(hass)).plan_id)
-    manifest = config_dir / ".entity_rename_safe" / "backups" / result.apply_id / "manifest.json"
+    manifest = config_dir / ".seamless_rename" / "backups" / result.apply_id / "manifest.json"
     data = json.loads(manifest.read_text())
     data["snapshots"] = ["other/evil.json"]
     manifest.write_text(json.dumps(data))

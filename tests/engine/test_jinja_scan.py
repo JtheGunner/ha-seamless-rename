@@ -1,6 +1,6 @@
 import pytest
 
-from custom_components.entity_rename_safe.engine.jinja_scan import find_pattern_warnings
+from custom_components.seamless_rename.engine.jinja_scan import find_pattern_warnings
 
 OLD = ["sensor.snap_volume_living"]
 PREFIX = "possible pattern reference, check manually"

@@ -2,8 +2,8 @@ import copy
 
 import pytest
 
-from custom_components.entity_rename_safe.engine.json_scan import rewrite_json, scan_json
-from custom_components.entity_rename_safe.engine.models import Confidence
+from custom_components.seamless_rename.engine.json_scan import rewrite_json, scan_json
+from custom_components.seamless_rename.engine.models import Confidence
 
 MAPPING = {"sensor.foo": "sensor.bar"}
 SAFE = {Confidence.CERTAIN, Confidence.LIKELY}

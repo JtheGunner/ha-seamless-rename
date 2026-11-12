@@ -16,7 +16,7 @@ from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
 from .const import CONF_EXTERNAL_PATHS, DOMAIN, WORK_DIR_NAME
 
 
-class EntityRenameSafeConfigFlow(ConfigFlow, domain=DOMAIN):
+class SeamlessRenameConfigFlow(ConfigFlow, domain=DOMAIN):
     """Create the single config entry."""
 
     VERSION = 1
@@ -24,7 +24,7 @@ class EntityRenameSafeConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-        return EntityRenameSafeOptionsFlow()
+        return SeamlessRenameOptionsFlow()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self.async_set_unique_id(DOMAIN)
@@ -32,7 +32,7 @@ class EntityRenameSafeConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(title="Seamless Rename", data={})
 
 
-class EntityRenameSafeOptionsFlow(OptionsFlow):
+class SeamlessRenameOptionsFlow(OptionsFlow):
     """Folders outside the configuration that are searched and reported, never edited."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

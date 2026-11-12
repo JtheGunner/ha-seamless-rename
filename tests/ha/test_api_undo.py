@@ -5,9 +5,9 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha import api
-from custom_components.entity_rename_safe.ha.api import PlanRequest
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha import api
+from custom_components.seamless_rename.ha.api import PlanRequest
 
 from .conftest import add_entity
 
@@ -76,7 +76,7 @@ async def test_undo_with_damaged_backup_leaves_registry_alone(
     hass: HomeAssistant, config_dir: Path, check_ok: None
 ) -> None:
     result = await _apply(hass, config_dir)
-    files = config_dir / ".entity_rename_safe" / "backups" / result.apply_id / "files"
+    files = config_dir / ".seamless_rename" / "backups" / result.apply_id / "files"
     for copy in files.iterdir():
         copy.write_text("damaged")
     with pytest.raises(api.UndoRefused):
@@ -89,7 +89,7 @@ async def test_undo_corrupt_manifest_is_refused(
     hass: HomeAssistant, config_dir: Path, check_ok: None
 ) -> None:
     result = await _apply(hass, config_dir)
-    manifest = config_dir / ".entity_rename_safe" / "backups" / result.apply_id / "manifest.json"
+    manifest = config_dir / ".seamless_rename" / "backups" / result.apply_id / "manifest.json"
     manifest.write_text("{bad")
     with pytest.raises(api.UndoRefused):
         await api.undo(hass, result.apply_id)

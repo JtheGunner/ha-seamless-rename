@@ -5,12 +5,12 @@
  * All text is inserted as text nodes, never as HTML.
  */
 
-const COMMAND_PREFIX = "entity_rename_safe/";
+const COMMAND_PREFIX = "seamless_rename/";
 const OBJECT_ID = "[a-z0-9]+(?:_[a-z0-9]+)*";
 const ENTITY_ID_SHAPE = new RegExp(`^${OBJECT_ID}\\.${OBJECT_ID}$`);
 
 const STYLE = `
-  :host, entity-rename-safe-panel { display: block; padding: 16px; color: var(--primary-text-color); }
+  :host, seamless-rename-panel { display: block; padding: 16px; color: var(--primary-text-color); }
   .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
   .tabs button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
   .card { border: 1px solid var(--divider-color); border-radius: 8px; padding: 12px; margin: 12px 0; }
@@ -81,7 +81,7 @@ function groupBySource(findings) {
   return groups;
 }
 
-export class EntityRenameSafePanel extends HTMLElement {
+export class SeamlessRenamePanel extends HTMLElement {
   constructor() {
     super();
     this._hass = null;
@@ -262,8 +262,8 @@ export class EntityRenameSafePanel extends HTMLElement {
     const { from, to, busy } = this._state;
     const ids = [...this._knownIds()].sort();
     return h("div", {},
-      h("datalist", { id: "entity-rename-safe-ids" }, ...ids.map((id) => h("option", { value: id }))),
-      this._field("Entity to rename", "from", { list: "entity-rename-safe-ids" }),
+      h("datalist", { id: "seamless-rename-ids" }, ...ids.map((id) => h("option", { value: id }))),
+      this._field("Entity to rename", "from", { list: "seamless-rename-ids" }),
       this._field("New entity ID", "to"),
       h("div", { class: "error", "data-test": "validation" }, validateNewId(from, to, this._knownIds())),
       h("button", { "data-test": "preview", disabled: busy || !from || !to, onclick: () => this._previewSingle() },
@@ -374,4 +374,4 @@ export class EntityRenameSafePanel extends HTMLElement {
   }
 }
 
-customElements.define("entity-rename-safe-panel", EntityRenameSafePanel);
+customElements.define("seamless-rename-panel", SeamlessRenamePanel);

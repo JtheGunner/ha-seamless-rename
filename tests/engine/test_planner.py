@@ -1,8 +1,8 @@
 import pytest
 
-from custom_components.entity_rename_safe.engine.ids import is_valid_entity_id
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.engine.planner import (
+from custom_components.seamless_rename.engine.ids import is_valid_entity_id
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.engine.planner import (
     order_renames,
     render_diff,
     resolve_pattern,

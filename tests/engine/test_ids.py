@@ -1,6 +1,6 @@
 import pytest
 
-from custom_components.entity_rename_safe.engine.ids import (
+from custom_components.seamless_rename.engine.ids import (
     build_token_pattern,
     is_valid_entity_id,
     object_id,
@@ -61,7 +61,7 @@ def test_longest_first() -> None:
 
 
 def test_domain_pattern_finds_only_known_domains() -> None:
-    from custom_components.entity_rename_safe.engine.ids import build_domain_pattern
+    from custom_components.seamless_rename.engine.ids import build_domain_pattern
 
     pattern = build_domain_pattern(["sensor", "light"])
     text = "a: sensor.one, b: light.two, c: switch.three, d: xsensor.four, e: states.sensor.five"
@@ -74,7 +74,7 @@ def test_domain_pattern_finds_only_known_domains() -> None:
 
 
 def test_domain_pattern_skips_file_names() -> None:
-    from custom_components.entity_rename_safe.engine.ids import build_domain_pattern
+    from custom_components.seamless_rename.engine.ids import build_domain_pattern
 
     pattern = build_domain_pattern(["sensor", "light"])
     text = "a: !include sensor.yaml\nb: packages/light.yml\nc: sensor.yaml_mode\nd: light.json_feed"

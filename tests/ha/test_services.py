@@ -5,7 +5,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.setup import async_setup_component
 
-from custom_components.entity_rename_safe.const import DOMAIN
+from custom_components.seamless_rename.const import DOMAIN
 
 from .conftest import add_entity
 

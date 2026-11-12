@@ -1,20 +1,20 @@
-# ha-seamless-rename (entity_rename_safe)
+# ha-seamless-rename (seamless_rename)
 
 Home Assistant custom integration that renames entity IDs and rewrites all consumers (YAML, UI dashboards, UI helpers) with dry-run, rollback, and undo. Design and plan live in `docs/superpowers/` (git-ignored, local only). Read the spec before changing behaviour.
 
 ## Hard rules (project-specific)
 
-- `custom_components/entity_rename_safe/engine/` must **never import Home Assistant**. Pure logic only.
+- `custom_components/seamless_rename/engine/` must **never import Home Assistant**. Pure logic only.
 - Services and websocket are thin wrappers over `ha/api.py`. No logic in `services.py`, `websocket.py`, or `panel/`.
 - **Never write into `.storage`, `secrets.yaml`, or `custom_components`.** Dashboards and helpers go through HA APIs only.
 - Edit YAML by **span replacement in the source text**. Never re-serialise a YAML file.
 - Match entity IDs with the shared token pattern in `engine/ids.py`. Do not write ad-hoc regexes elsewhere.
-- Plan state lives in `/config/.entity_rename_safe/` (plans, backups). It is not part of the repo.
+- Plan state lives in `/config/.seamless_rename/` (plans, backups). It is not part of the repo.
 
 ## Naming exceptions
 
 - Service fields are `from` / `to`; in Python they are `from_id` / `to_id`.
-- The integration domain is `entity_rename_safe`; the repo name is `ha-seamless-rename`.
+- The integration domain is `seamless_rename`; the repo name is `ha-seamless-rename`.
 
 ## Commands
 

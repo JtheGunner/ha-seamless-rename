@@ -6,9 +6,9 @@ from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 
-from custom_components.entity_rename_safe.engine.models import Rename
-from custom_components.entity_rename_safe.ha import api
-from custom_components.entity_rename_safe.ha.api import PlanRequest
+from custom_components.seamless_rename.engine.models import Rename
+from custom_components.seamless_rename.ha import api
+from custom_components.seamless_rename.ha.api import PlanRequest
 
 from ..e2e.test_roundtrip import NEW_ID, OLD_ID, YAML_FILES
 from .conftest import add_entity

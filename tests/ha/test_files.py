@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.entity_rename_safe.const import DEFAULT_EXCLUDES
-from custom_components.entity_rename_safe.ha.files import (
+from custom_components.seamless_rename.const import DEFAULT_EXCLUDES
+from custom_components.seamless_rename.ha.files import (
     discover_yaml_files,
     sha256_of,
     write_atomic,
@@ -31,7 +31,7 @@ def test_discovers_yaml_and_yml_and_applies_default_excludes(tmp_path: Path) -> 
     _touch(root / ".git" / "info.yaml")
     _touch(root / "custom_components" / "x" / "services.yaml")
     _touch(root / "secrets.yaml")
-    _touch(root / ".entity_rename_safe" / "plans" / "p.yaml")
+    _touch(root / ".seamless_rename" / "plans" / "p.yaml")
     found = discover_yaml_files(root, DEFAULT_EXCLUDES)
     assert _names(root, found) == {"automations.yaml", "packages/music.yml"}
 

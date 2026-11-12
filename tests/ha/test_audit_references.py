@@ -6,9 +6,9 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 
-from custom_components.entity_rename_safe.const import DOMAIN, WORK_DIR_NAME
-from custom_components.entity_rename_safe.engine.models import Confidence
-from custom_components.entity_rename_safe.ha import api
+from custom_components.seamless_rename.const import DOMAIN, WORK_DIR_NAME
+from custom_components.seamless_rename.engine.models import Confidence
+from custom_components.seamless_rename.ha import api
 
 from .conftest import add_entity
 

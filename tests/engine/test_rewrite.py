@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from custom_components.entity_rename_safe.engine.models import Confidence
-from custom_components.entity_rename_safe.engine.rewrite import apply_edits
-from custom_components.entity_rename_safe.engine.yaml_scan import scan_yaml
+from custom_components.seamless_rename.engine.models import Confidence
+from custom_components.seamless_rename.engine.rewrite import apply_edits
+from custom_components.seamless_rename.engine.yaml_scan import scan_yaml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SAFE = {Confidence.CERTAIN, Confidence.LIKELY}
