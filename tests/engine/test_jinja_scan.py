@@ -1,6 +1,7 @@
 import pytest
 
 from custom_components.seamless_rename.engine.jinja_scan import find_pattern_warnings
+from custom_components.seamless_rename.engine.messages import describe
 
 OLD = ["sensor.snap_volume_living"]
 PREFIX = "possible pattern reference, check manually"
@@ -51,3 +52,11 @@ def test_short_fragment_no_warning() -> None:
 
 def test_fragment_in_double_quoted_literal_warns() -> None:
     assert find_pattern_warnings('{{ states("sensor." ~ "snap_volume") }}', OLD)
+
+
+def test_pattern_warning_carries_a_code_and_the_heuristic() -> None:
+    [warning] = find_pattern_warnings("{{ states.light | list }}", ["light.old_name_here"])
+    assert describe(warning) == {
+        "code": "pattern_reference",
+        "params": {"heuristic": "states.<domain> filter"},
+    }

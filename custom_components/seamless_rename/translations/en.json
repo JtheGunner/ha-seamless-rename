@@ -99,6 +99,20 @@
       "protected_path": "This folder is part of Home Assistant's internal storage and cannot be searched."
     }
   },
+  "exceptions": {
+    "rename_rejected": { "message": "The rename was rejected: {error}" },
+    "plan_not_found": { "message": "This plan or backup does not exist: {error}" },
+    "plan_blocked": { "message": "The plan has blockers and cannot be applied: {error}" },
+    "plan_stale": { "message": "A file changed since the plan was made, plan again: {error}" },
+    "plan_expired": { "message": "The plan is too old, plan again: {error}" },
+    "config_check_failed": {
+      "message": "Home Assistant rejected the changed configuration and the files were restored: {error}"
+    },
+    "apply_failed": { "message": "The rename failed and was rolled back: {error}" },
+    "unknown_finding": { "message": "The selection contains a finding that is not part of the plan: {error}" },
+    "undo_refused": { "message": "The undo was refused: {error}" },
+    "invalid_request": { "message": "The request is invalid: {error}" }
+  },
   "issues": {
     "incomplete_apply": {
       "title": "Interrupted rename",

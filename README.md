@@ -158,12 +158,27 @@ data:
 
 ### 🖥️ Panel
 
-The **Entity Rename** entry in the sidebar (administrators only) offers the same functions:
+The **Seamless Rename** entry in the sidebar (administrators only) offers the same functions:
 
 - **Single rename** with entity picker and live validation of the new ID.
 - **Preview** with the diff, findings grouped by file, dashboard or helper, and a checkbox per finding.
 - **Bulk** by pattern or pasted `from,to` lines, with a table that marks collisions.
 - **History** of all applies with undo.
+
+### 🌍 Languages
+
+The panel, the setup and options dialogs, the services and the repair issue follow the language of the
+signed-in Home Assistant user. **English** and **German** are included; any other language falls back
+to English. Plan warnings, blockers and errors are translated too, and the service responses keep
+their English text.
+
+To add a language (for example `fr`):
+
+1. Copy `custom_components/seamless_rename/translations/en.json` to `fr.json` and translate the values.
+   Keep every key and every `{placeholder}`.
+2. In `custom_components/seamless_rename/panel/i18n.js`, copy the `en` dictionary, translate it and
+   register it in `TRANSLATIONS`.
+3. Run the tests. They fail if a language misses a key or a placeholder.
 
 ### 🩹 Interrupted apply
 
@@ -224,7 +239,8 @@ Layout:
 | 🧮 | `custom_components/seamless_rename/engine/` | Pure logic, never imports Home Assistant       |
 | 🔌 | `custom_components/seamless_rename/ha/`     | Adapters for registry, files, dashboards, helpers; `api.py` is the one entry point |
 | 📡 | `services.py`, `websocket.py`                  | Thin wrappers over `ha/api.py`                  |
-| 🖼️ | `panel/`                                       | Vanilla web component, no build step           |
+| 🖼️ | `panel/`                                       | Vanilla web component, no build step; texts in `i18n.js` |
+| 🌍 | `translations/`                                | Language files of the integration (`en`, `de`) |
 
 An optional end-to-end test runs against a real Home Assistant container: `E2E=1 uv run pytest tests/e2e`.
 

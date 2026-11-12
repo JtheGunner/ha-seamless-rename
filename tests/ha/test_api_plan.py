@@ -82,6 +82,11 @@ async def test_plan_reports_pattern_warnings(hass: HomeAssistant, config_dir: Pa
     )
     result = await api.plan(hass, _request(("sensor.foo", "sensor.bar")))
     assert any("pattern reference" in w for w in result.warnings)
+    details = result.to_response()["warning_details"]
+    assert any(
+        item["code"] == "pattern_reference" and item["params"]["file"] == "t.yaml"
+        for item in details
+    )
 
 
 async def test_plan_skips_excluded_and_unreadable_files(
@@ -93,6 +98,12 @@ async def test_plan_skips_excluded_and_unreadable_files(
     result = await api.plan(hass, _request(("sensor.foo", "sensor.bar")))
     assert result.summary["files"] == {}
     assert any("binary.yaml" in w for w in result.warnings)
+    unreadable = [
+        item
+        for item in result.to_response()["warning_details"]
+        if item["code"] == "file_unreadable"
+    ]
+    assert [item["params"]["file"] for item in unreadable] == ["binary.yaml"]
 
 
 async def test_stored_plan_is_valid_json_with_hash(hass: HomeAssistant, config_dir: Path) -> None:

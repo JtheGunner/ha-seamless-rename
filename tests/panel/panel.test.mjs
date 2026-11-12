@@ -32,8 +32,8 @@ const plan = (overrides = {}) => ({
   ...overrides,
 });
 
-function mount(handlers, ids) {
-  const hass = fakeHass(handlers, ids);
+function mount(handlers, ids, language) {
+  const hass = fakeHass(handlers, ids, language);
   const panel = new SeamlessRenamePanel();
   panel.hass = hass;
   return { panel, hass };
@@ -216,6 +216,91 @@ test("history shows a readable timestamp", async () => {
   await find(panel, "tab-history").fire("click");
   const cell = find(panel, "history-row").querySelector("td");
   assert.equal(cell.textContent, new Date(created).toLocaleString());
+});
+
+test("the panel speaks the language of the Home Assistant user", async () => {
+  const { panel } = mount({ history: () => ({ history: [] }) }, undefined, "de");
+  assert.equal(find(panel, "tab-single").textContent, "Einzelumbenennung");
+  assert.equal(find(panel, "preview").textContent, "Vorschau");
+  assert.doesNotMatch(panel.textContent, /Single rename|Entity to rename|Preview/);
+  await find(panel, "tab-history").fire("click");
+  assert.equal(find(panel, "history-empty").textContent, "Noch keine Umbenennungen aufgezeichnet.");
+});
+
+test("an unsupported language falls back to english", () => {
+  const { panel } = mount({}, undefined, "fr");
+  assert.equal(find(panel, "tab-single").textContent, "Single rename");
+});
+
+test("validation messages are translated", async () => {
+  const { panel } = mount({}, undefined, "de");
+  await find(panel, "input-from").fire("input", { value: "sensor.foo" });
+  await find(panel, "input-to").fire("input", { value: "light.other" });
+  assert.equal(find(panel, "validation").textContent, "Die Domain kann nicht geändert werden.");
+});
+
+test("coded blockers and warnings are translated and mark collisions", async () => {
+  const { panel } = mount({
+    plan: () => plan({
+      renames: [{ from: "sensor.a", to: "sensor.same" }, { from: "sensor.b", to: "sensor.same" }],
+      blockers: ["english blocker"],
+      blocker_details: [{ code: "duplicate_target", params: { entity: "sensor.same" } }],
+      warnings: ["english warning", "other english"],
+      warning_details: [
+        { code: "no_state", params: { entity: "sensor.a" } },
+        { code: "not_yet_known", params: {} },
+      ],
+      findings: [],
+    }),
+  }, undefined, "de");
+  await find(panel, "tab-bulk").fire("click");
+  await find(panel, "input-csv").fire("input", { value: "sensor.a,sensor.same\nsensor.b,sensor.same" });
+  await find(panel, "preview").fire("click");
+
+  assert.match(find(panel, "blockers").textContent, /Ziel von mehr als einer Umbenennung/);
+  assert.doesNotMatch(find(panel, "blockers").textContent, /english blocker/);
+  assert.match(find(panel, "warnings").textContent, /Hat keinen Zustand/);
+  assert.match(find(panel, "warnings").textContent, /other english/);
+  const flags = findAll(panel, "rename-row").map((row) => row.getAttribute("data-collision"));
+  assert.deepEqual(flags, ["true", "true"]);
+});
+
+test("a plan without details still shows the english text", async () => {
+  const { panel } = mount({ plan: () => plan({ blockers: ["plain text"] }) }, undefined, "de");
+  await previewSingle(panel);
+  assert.match(find(panel, "blockers").textContent, /plain text/);
+});
+
+test("confidence badges and statuses are translated", async () => {
+  const { panel } = mount({
+    plan: () => plan(),
+    history: () => ({
+      history: [{ apply_id: "a", created_at: "t", status: "completed", renames: [] }],
+    }),
+  }, undefined, "de");
+  await previewSingle(panel);
+  assert.deepEqual(findAll(panel, "badge").map((badge) => badge.textContent), [
+    "sicher", "wahrscheinlich", "unsicher",
+  ]);
+  await find(panel, "tab-history").fire("click");
+  assert.match(find(panel, "history-row").textContent, /abgeschlossen/);
+});
+
+test("backend errors with a translation key are translated", async () => {
+  const error = Object.assign(new Error("no plan x"), { translation_key: "plan_not_found" });
+  const { panel } = mount({ plan: () => { throw error; } }, undefined, "de");
+  await previewSingle(panel);
+  assert.equal(find(panel, "error").textContent, "Dieser Plan oder dieses Backup existiert nicht. (no plan x)");
+});
+
+test("history timestamps follow the user's language", async () => {
+  const created = "2026-11-12T20:10:03.763221+00:00";
+  const { panel } = mount({
+    history: () => ({ history: [{ apply_id: "a", created_at: created, status: "undone", renames: [] }] }),
+  }, undefined, "de");
+  await find(panel, "tab-history").fire("click");
+  const cell = find(panel, "history-row").querySelector("td");
+  assert.equal(cell.textContent, new Date(created).toLocaleString("de"));
 });
 
 test("parseCsv skips the header and blank or malformed lines", () => {

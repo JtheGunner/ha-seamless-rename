@@ -34,9 +34,21 @@ def _guarded(handler: Handler) -> Handler:
         try:
             await handler(hass, connection, msg)
         except api.RenameError as error:
-            connection.send_error(msg["id"], ERR_REJECTED, str(error))
+            connection.send_error(
+                msg["id"],
+                ERR_REJECTED,
+                str(error),
+                translation_key=error.code,
+                translation_domain=DOMAIN,
+            )
         except ValueError as error:
-            connection.send_error(msg["id"], ERR_INVALID, str(error))
+            connection.send_error(
+                msg["id"],
+                ERR_INVALID,
+                str(error),
+                translation_key=ERR_INVALID,
+                translation_domain=DOMAIN,
+            )
 
     return wrapper
 

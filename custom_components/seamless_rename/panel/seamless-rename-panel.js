@@ -5,6 +5,8 @@
  * All text is inserted as text nodes, never as HTML.
  */
 
+import { errorText, messageText, translate } from "./i18n.js";
+
 const COMMAND_PREFIX = "seamless_rename/";
 const OBJECT_ID = "[a-z0-9]+(?:_[a-z0-9]+)*";
 const ENTITY_ID_SHAPE = new RegExp(`^${OBJECT_ID}\\.${OBJECT_ID}$`);
@@ -108,19 +110,19 @@ export function parseCsv(text) {
 }
 
 /** Return a short problem description for a new entity ID, or ``""`` when it looks fine. */
-export function validateNewId(from, to, knownIds) {
+export function validateNewId(from, to, knownIds, language = "en") {
   if (!to) return "";
-  if (!ENTITY_ID_SHAPE.test(to)) return "Not a valid entity ID (lowercase letters, digits, underscores).";
-  if (from && from.split(".")[0] !== to.split(".")[0]) return "The domain cannot change.";
-  if (from === to) return "The new ID equals the old one.";
-  if (knownIds.has(to)) return "This entity ID already exists.";
+  if (!ENTITY_ID_SHAPE.test(to)) return translate(language, "validation.invalid");
+  if (from && from.split(".")[0] !== to.split(".")[0]) return translate(language, "validation.domain");
+  if (from === to) return translate(language, "validation.same");
+  if (knownIds.has(to)) return translate(language, "validation.exists");
   return "";
 }
 
-/** Format an ISO timestamp in the browser locale; unparseable values are shown as received. */
-export function formatTimestamp(value) {
+/** Format an ISO timestamp for the user's language; unparseable values are shown as received. */
+export function formatTimestamp(value, language) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString(language || undefined);
 }
 
 /** Group plan findings by the file, dashboard or helper they belong to. */
@@ -166,6 +168,15 @@ export class SeamlessRenamePanel extends HTMLElement {
     return this._hass;
   }
 
+  /** The text for ``key`` in the language of the signed-in Home Assistant user. */
+  _t(key, params) {
+    return translate(this._language(), key, params);
+  }
+
+  _language() {
+    return this._hass?.language ?? this._hass?.locale?.language;
+  }
+
   connectedCallback() {
     this._render();
   }
@@ -186,7 +197,7 @@ export class SeamlessRenamePanel extends HTMLElement {
     try {
       await action();
     } catch (error) {
-      this._state.error = error?.message ?? String(error);
+      this._state.error = errorText(this._language(), error);
     } finally {
       this._state.busy = false;
       this._render();
@@ -265,12 +276,12 @@ export class SeamlessRenamePanel extends HTMLElement {
 
   _render() {
     const state = this._state;
-    const body = this._hass === null ? [h("p", {}, "Loading…")] : [
+    const body = this._hass === null ? [h("p", {}, this._t("loading"))] : [
       h("div", { class: "tabs" }, ...this._tabs()),
       state.error ? h("div", { class: "error", "data-test": "error" }, state.error) : null,
       state.forceFor
         ? h("button", { class: "danger", "data-test": "force-undo", onclick: () => this._undo(state.forceFor, true) },
-            "Force undo (overwrite later edits)")
+            this._t("force_undo"))
         : null,
       state.tab === "single" ? this._singleTab() : null,
       state.tab === "bulk" ? this._bulkTab() : null,
@@ -285,13 +296,13 @@ export class SeamlessRenamePanel extends HTMLElement {
   }
 
   _tabs() {
-    return [["single", "Single rename"], ["bulk", "Bulk"], ["history", "History"]].map(
+    return [["single", "tab.single"], ["bulk", "tab.bulk"], ["history", "tab.history"]].map(
       ([id, label]) =>
         h("button", {
           "data-test": `tab-${id}`,
           class: this._state.tab === id ? "active" : "",
           onclick: () => this._setTab(id),
-        }, label),
+        }, this._t(label)),
     );
   }
 
@@ -312,7 +323,7 @@ export class SeamlessRenamePanel extends HTMLElement {
     const message = this.querySelector('[data-test="validation"]');
     if (!message) return;
     const { from, to } = this._state;
-    message.textContent = validateNewId(from, to, this._knownIds());
+    message.textContent = validateNewId(from, to, this._knownIds(), this._language());
   }
 
   _singleTab() {
@@ -321,14 +332,14 @@ export class SeamlessRenamePanel extends HTMLElement {
     return h("div", {},
       h("div", { class: "card" },
         h("datalist", { id: "seamless-rename-ids" }, ...ids.map((id) => h("option", { value: id }))),
-        this._field("Entity to rename", "from", { list: "seamless-rename-ids" }),
-        this._field("New entity ID", "to"),
-        h("div", { class: "error", "data-test": "validation" }, validateNewId(from, to, this._knownIds())),
+        this._field(this._t("field.from"), "from", { list: "seamless-rename-ids" }),
+        this._field(this._t("field.to"), "to"),
+        h("div", { class: "error", "data-test": "validation" }, validateNewId(from, to, this._knownIds(), this._language())),
         h("div", { class: "actions" },
           h("button", {
             class: "primary", "data-test": "preview", disabled: busy || !from || !to,
             onclick: () => this._previewSingle(),
-          }, "Preview"))),
+          }, this._t("preview")))),
       this._state.plan ? this._planCard(this._state.plan) : null);
   }
 
@@ -336,11 +347,11 @@ export class SeamlessRenamePanel extends HTMLElement {
     const { busy } = this._state;
     return h("div", {},
       h("div", { class: "card" },
-        h("p", { class: "hint" }, "Use a pattern (regular expression on the entity ID) or paste from,to lines."),
-        this._field("Match", "match"),
-        this._field("Replace", "replace"),
-        this._field("Domain (optional)", "domain"),
-        h("label", { class: "field" }, "CSV (from,to per line; overrides the pattern)",
+        h("p", { class: "hint" }, this._t("bulk.hint")),
+        this._field(this._t("field.match"), "match"),
+        this._field(this._t("field.replace"), "replace"),
+        this._field(this._t("field.domain"), "domain"),
+        h("label", { class: "field" }, this._t("field.csv"),
           h("textarea", {
             "data-test": "input-csv",
             value: this._state.csv,
@@ -348,8 +359,13 @@ export class SeamlessRenamePanel extends HTMLElement {
           })),
         h("div", { class: "actions" },
           h("button", { class: "primary", "data-test": "preview", disabled: busy, onclick: () => this._previewBulk() },
-            "Preview"))),
+            this._t("preview")))),
       this._state.plan ? this._planCard(this._state.plan) : null);
+  }
+
+  /** Translate backend messages by code; messages without a known code stay in English. */
+  _messageTexts(texts, details = []) {
+    return texts.map((text, index) => messageText(this._language(), details[index], text));
   }
 
   _planCard(plan) {
@@ -358,13 +374,15 @@ export class SeamlessRenamePanel extends HTMLElement {
     return h("div", { class: "card", "data-test": "plan" },
       blocked
         ? h("div", { "data-test": "blockers" },
-            h("strong", {}, "Blocked – this plan cannot be applied:"),
-            h("ul", {}, ...plan.blockers.map((text) => h("li", { class: "blocker" }, text))))
+            h("strong", {}, this._t("blocked")),
+            h("ul", {}, ...this._messageTexts(plan.blockers, plan.blocker_details)
+              .map((text) => h("li", { class: "blocker" }, text))))
         : null,
       plan.warnings.length > 0
         ? h("div", { "data-test": "warnings" },
-            h("strong", {}, "Warnings:"),
-            h("ul", {}, ...plan.warnings.map((text) => h("li", { class: "warning" }, text))))
+            h("strong", {}, this._t("warnings")),
+            h("ul", {}, ...this._messageTexts(plan.warnings, plan.warning_details)
+              .map((text) => h("li", { class: "warning" }, text))))
         : null,
       this._renamesTable(plan),
       ...[...groupBySource(plan.findings)].map(([source, findings]) =>
@@ -372,25 +390,28 @@ export class SeamlessRenamePanel extends HTMLElement {
           h("h4", {}, source),
           ...findings.map((finding) => this._findingRow(finding, selected.has(finding.finding_id))))),
       plan.external.length > 0
-        ? h("p", { "data-test": "external" },
-            `${plan.external.length} reference(s) outside the configuration are listed but not changed.`)
+        ? h("p", { "data-test": "external" }, this._t("external", { count: plan.external.length }))
         : null,
-      h("details", {}, h("summary", {}, "Full diff"), h("pre", { "data-test": "diff" }, plan.diff ?? "")),
+      h("details", {}, h("summary", {}, this._t("full_diff")), h("pre", { "data-test": "diff" }, plan.diff ?? "")),
       h("div", { class: "actions" },
         h("button", { class: "primary", "data-test": "apply", disabled: busy || blocked, onclick: () => this._apply() },
-          "Apply selected changes")));
+          this._t("apply"))));
   }
 
   _renamesTable(plan) {
-    const isCollision = (rename) =>
-      plan.blockers.some((text) => text.startsWith(`${rename.from}:`) || text.startsWith(`${rename.to}:`));
+    const involved = (rename) => plan.blockers.some((text, index) => {
+      const entity = plan.blocker_details?.[index]?.params?.entity;
+      return entity === undefined
+        ? text.startsWith(`${rename.from}:`) || text.startsWith(`${rename.to}:`)
+        : entity === rename.from || entity === rename.to;
+    });
     return h("div", { class: "table-wrap" }, h("table", { "data-test": "renames-table" },
-      h("tr", {}, h("th", {}, "From"), h("th", {}, "To")),
+      h("tr", {}, h("th", {}, this._t("col.from")), h("th", {}, this._t("col.to"))),
       ...plan.renames.map((rename) =>
         h("tr", {
           "data-test": "rename-row",
-          class: isCollision(rename) ? "collision" : "",
-          "data-collision": isCollision(rename) ? "true" : "false",
+          class: involved(rename) ? "collision" : "",
+          "data-collision": involved(rename) ? "true" : "false",
         }, h("td", {}, rename.from), h("td", {}, rename.to)))));
   }
 
@@ -403,41 +424,56 @@ export class SeamlessRenamePanel extends HTMLElement {
         checked,
         onchange: (event) => this._toggleFinding(finding.finding_id, event.target.checked),
       }),
-      h("span", { class: `badge badge-${finding.confidence}`, "data-test": "badge" }, finding.confidence),
-      `line ${finding.line}: ${finding.old} → ${finding.new}`);
+      h("span", { class: `badge badge-${finding.confidence}`, "data-test": "badge" },
+        this._label("confidence", finding.confidence)),
+      this._t("finding", { line: finding.line, old: finding.old, new: finding.new }));
+  }
+
+  /** Translate an enum value such as a status; an unknown value is shown as received. */
+  _label(group, value) {
+    const key = `${group}.${value}`;
+    const text = this._t(key);
+    return text === key ? String(value) : text;
   }
 
   _appliedCard(result) {
-    const counts = `${result.changed_files.length} file(s), ${result.changed_dashboards.length} dashboard(s), `
-      + `${result.changed_helpers.length} helper(s)`;
     return h("div", { class: "card", "data-test": "apply-result" },
-      h("strong", {}, `Status: ${result.status}`),
-      h("p", {}, `Changed ${counts}.`),
+      h("strong", {}, this._t("result.status", { status: this._label("status", result.status) })),
+      h("p", {}, this._t("result.changed", {
+        files: result.changed_files.length,
+        dashboards: result.changed_dashboards.length,
+        helpers: result.changed_helpers.length,
+      })),
       result.restart_required
-        ? h("p", { class: "warning", "data-test": "restart-required" }, "Restart Home Assistant to finish.")
+        ? h("p", { class: "warning", "data-test": "restart-required" }, this._t("result.restart"))
         : null,
-      ...result.warnings.map((text) => h("p", { class: "warning" }, text)),
+      ...this._messageTexts(result.warnings, result.warning_details)
+        .map((text) => h("p", { class: "warning" }, text)),
       result.status === "completed"
-        ? h("button", { class: "danger", "data-test": "undo", onclick: () => this._undo(result.apply_id) }, "Undo")
+        ? h("button", { class: "danger", "data-test": "undo", onclick: () => this._undo(result.apply_id) },
+            this._t("undo"))
         : null);
   }
 
   _historyTab() {
     const history = this._state.history;
-    if (history === null) return h("p", { class: "hint" }, "Loading…");
-    if (history.length === 0) return h("p", { class: "hint", "data-test": "history-empty" }, "No renames recorded yet.");
+    if (history === null) return h("p", { class: "hint" }, this._t("loading"));
+    if (history.length === 0) {
+      return h("p", { class: "hint", "data-test": "history-empty" }, this._t("history.empty"));
+    }
     return h("div", { class: "card table-wrap" }, h("table", { "data-test": "history-table" },
-      h("tr", {}, h("th", {}, "When"), h("th", {}, "Renames"), h("th", {}, "Status"), h("th", {}, "")),
+      h("tr", {}, h("th", {}, this._t("col.when")), h("th", {}, this._t("col.renames")),
+        h("th", {}, this._t("col.status")), h("th", {}, "")),
       ...history.map((item) =>
         h("tr", { "data-test": "history-row" },
-          h("td", {}, formatTimestamp(item.created_at)),
+          h("td", {}, formatTimestamp(item.created_at, this._language())),
           h("td", {}, item.renames.map((r) => `${r.from} → ${r.to}`).join(", ")),
-          h("td", {}, item.status),
+          h("td", {}, this._label("status", item.status)),
           h("td", {}, item.status === "completed"
             ? h("button", {
               class: "danger", "data-test": "undo", "data-id": item.apply_id,
               onclick: () => this._undo(item.apply_id),
-            }, "Undo")
+            }, this._t("undo"))
             : null)))));
   }
 }

@@ -258,6 +258,9 @@ async def test_reload_failure_keeps_completed_status_and_asks_for_restart(
     assert result.status == "completed"
     assert result.restart_required
     assert any("reload failed" in w for w in result.warnings)
+    details = result.to_response()["warning_details"]
+    assert [item["code"] for item in details] == ["reload_failed"]
+    assert details[0]["params"] == {"error": "reload broke"}
     manifest = json.loads(
         (config_dir / WORK_DIR_NAME / "backups" / result.apply_id / "manifest.json").read_text()
     )

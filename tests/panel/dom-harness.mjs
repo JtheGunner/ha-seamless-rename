@@ -93,10 +93,11 @@ export function installDom() {
 }
 
 /** A ``hass`` stand-in whose websocket answers come from ``handlers[type](message)``. */
-export function fakeHass(handlers, ids = ["sensor.foo", "sensor.taken"]) {
+export function fakeHass(handlers, ids = ["sensor.foo", "sensor.taken"], language = undefined) {
   const sent = [];
   return {
     sent,
+    language,
     entities: Object.fromEntries(ids.map((id) => [id, {}])),
     connection: {
       async sendMessagePromise(message) {

@@ -7,6 +7,7 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 
 from .ids import is_valid_entity_id
+from .messages import CodedMessage
 from .models import Rename
 
 TEMP_ID_PREFIX = "rename_safe_tmp_"
@@ -86,26 +87,62 @@ def run_preflight(
     for rename in renames:
         old, new = rename.from_id, rename.to_id
         if old == new:
-            blockers.append(f"{old}: the new ID is identical to the old ID")
+            blockers.append(
+                CodedMessage("same_id", f"{old}: the new ID is identical to the old ID", entity=old)
+            )
             continue
         if not is_valid_entity_id(new):
-            blockers.append(f"{old}: '{new}' is not a valid entity ID")
+            blockers.append(
+                CodedMessage(
+                    "invalid_id", f"{old}: '{new}' is not a valid entity ID", entity=old, target=new
+                )
+            )
             continue
         if _domain(old) != _domain(new):
-            blockers.append(f"{old}: the domain cannot change ('{new}')")
+            blockers.append(
+                CodedMessage(
+                    "domain_change",
+                    f"{old}: the domain cannot change ('{new}')",
+                    entity=old,
+                    target=new,
+                )
+            )
         if old not in registry_ids:
             blockers.append(
-                f"{old}: not in the entity registry (a YAML entity without unique_id "
-                "cannot be renamed automatically)"
+                CodedMessage(
+                    "not_in_registry",
+                    f"{old}: not in the entity registry (a YAML entity without unique_id "
+                    "cannot be renamed automatically)",
+                    entity=old,
+                )
             )
         elif old not in state_ids:
-            warnings.append(f"{old}: has no state (disabled or unavailable)")
+            warnings.append(
+                CodedMessage(
+                    "no_state", f"{old}: has no state (disabled or unavailable)", entity=old
+                )
+            )
         if new not in sources and (new in registry_ids or new in state_ids):
-            blockers.append(f"{old}: the target '{new}' already exists")
+            blockers.append(
+                CodedMessage(
+                    "target_exists",
+                    f"{old}: the target '{new}' already exists",
+                    entity=old,
+                    target=new,
+                )
+            )
         if sources[old] > 1:
-            blockers.append(f"{old}: renamed more than once in the same plan")
+            blockers.append(
+                CodedMessage(
+                    "renamed_twice", f"{old}: renamed more than once in the same plan", entity=old
+                )
+            )
         if targets[new] > 1:
-            blockers.append(f"{new}: is the target of more than one rename")
+            blockers.append(
+                CodedMessage(
+                    "duplicate_target", f"{new}: is the target of more than one rename", entity=new
+                )
+            )
     return Preflight(blockers=list(dict.fromkeys(blockers)), warnings=warnings)
 
 
