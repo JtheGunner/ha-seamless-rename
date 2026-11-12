@@ -26,8 +26,12 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         _LOGGER.debug("frontend not loaded, panel not registered")
         return
     module_url = f"{STATIC_URL}/{PANEL_FILE.name}"
+    # The panel imports its sibling scripts (``./i18n.js``), so all of them are served.
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(module_url, str(PANEL_FILE), cache_headers=False)]
+        [
+            StaticPathConfig(f"{STATIC_URL}/{script.name}", str(script), cache_headers=False)
+            for script in sorted(PANEL_FILE.parent.glob("*.js"))
+        ]
     )
     await panel_custom.async_register_panel(
         hass,
