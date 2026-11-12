@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.check_config import HomeAssistantConfig
 
 CHECK_PATH = "custom_components.entity_rename_safe.ha.api.async_check_ha_config_file"
 
@@ -23,7 +24,7 @@ def config_dir(hass: HomeAssistant, tmp_path: Path) -> Path:
 @pytest.fixture
 def check_ok() -> Iterator[None]:
     """Make the configuration check pass."""
-    with patch(CHECK_PATH, return_value=None):
+    with patch(CHECK_PATH, return_value=HomeAssistantConfig()):
         yield
 
 
