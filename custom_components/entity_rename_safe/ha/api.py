@@ -49,7 +49,13 @@ from .lovelace import (
     scan_dashboards,
     write_snapshot,
 )
-from .registry import registry_entity_ids, rename_entity, state_entity_ids
+from .registry import (
+    current_entity_id,
+    registry_entity_ids,
+    registry_uuids,
+    rename_entity,
+    state_entity_ids,
+)
 from .reload import domains_for_files, reload_domains
 
 PLAN_TTL = timedelta(hours=24)
@@ -567,6 +573,7 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
         created_at=dt_util.utcnow().isoformat(),
         renames=renames,
         files=[FileRecord(str(root / rel), before[rel]) for rel in changed],
+        entity_registry_ids=registry_uuids(hass, [rename.from_id for rename in renames]),
     )
     stale = [rel for rel in changed if before[rel] != payload["base_hashes"].get(rel)]
     if stale:
@@ -684,13 +691,19 @@ async def apply(hass: HomeAssistant, plan_id: str) -> ApplyResult:
 
 
 async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> ApplyResult:
-    """Reverse a completed apply; refuse if files changed since, unless ``force``."""
+    """Reverse a completed apply; refuse if files changed since, unless ``force``.
+
+    An apply that was interrupted (status ``in_progress``, e.g. by a crash) is rolled back to
+    the state before it started; the registry is repaired from the recorded registry UUIDs.
+    """
     manifest, backup_dir = await hass.async_add_executor_job(
         _load_manifest, _work_dir(hass), apply_id
     )
-    if manifest.status != "completed":
+    recovering = manifest.status == "in_progress"
+    if manifest.status != "completed" and not recovering:
         raise UndoRefused(
-            f"apply {apply_id} has status {manifest.status}; only completed applies can be undone"
+            f"apply {apply_id} has status {manifest.status}; "
+            "only completed or interrupted applies can be undone"
         )
     unknown_names = [n for n in manifest.snapshots if not n.startswith(("dashboards/", "helpers/"))]
     if unknown_names:
@@ -708,7 +721,7 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
         ]
     except ValueError as error:
         raise UndoRefused(str(error)) from error
-    if not force:
+    if not force and not recovering:
         changed = await hass.async_add_executor_job(_changed_since, manifest)
         changed += await _dashboards_changed_since(hass, snapshots)
         changed += _helpers_changed_since(hass, helper_snaps)
@@ -716,7 +729,10 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
             raise UndoRefused(
                 f"changed since the apply: {', '.join(changed)}; use force to overwrite"
             )
-    back = order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames])
+    if recovering:
+        back = order_renames(_interrupted_steps(hass, manifest))
+    else:
+        back = order_renames([Rename(r.to_id, r.from_id) for r in manifest.renames])
     done: list[Rename] = []
     restored: list[dict[str, Any]] = []
     restored_helpers: list[dict[str, Any]] = []
@@ -753,16 +769,28 @@ async def undo(hass: HomeAssistant, apply_id: str, *, force: bool = False) -> Ap
     except Exception as error:  # noqa: BLE001 - the files are already restored
         warnings.append(f"reload failed, restart Home Assistant: {error}")
         needs_restart = True
-    await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, "undone")
+    final_status = "rolled_back" if recovering else "undone"
+    await hass.async_add_executor_job(_finish_manifest, backup_dir, manifest, final_status)
     return ApplyResult(
         apply_id,
-        "undone",
+        final_status,
         relatives,
         [DashboardRef(snapshot["url_path"]).label for snapshot in snapshots],
         [snap["entry_id"] for snap in helper_snaps],
         needs_restart,
         warnings,
     )
+
+
+def _interrupted_steps(hass: HomeAssistant, manifest: Manifest) -> list[Rename]:
+    """Renames that put every entity of an interrupted apply back to its old ID."""
+    steps: list[Rename] = []
+    for rename in manifest.renames:
+        uuid_ = manifest.entity_registry_ids.get(rename.from_id)
+        current = current_entity_id(hass, uuid_) if uuid_ else None
+        if current is not None and current != rename.from_id:
+            steps.append(Rename(current, rename.from_id))
+    return steps
 
 
 async def _dashboards_changed_since(

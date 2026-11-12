@@ -86,5 +86,22 @@
       "not_a_directory": "Every path must be an existing folder.",
       "protected_path": "This folder is part of Home Assistant's internal storage and cannot be searched."
     }
+  },
+  "issues": {
+    "incomplete_apply": {
+      "title": "Interrupted rename",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Roll back the interrupted rename",
+            "description": "Roll back apply {apply_id}? Files, dashboards, helpers and entity IDs are restored to the state before it started."
+          }
+        },
+        "abort": {
+          "undo_failed": "Roll back failed: {error}"
+        }
+      },
+      "description": "A rename apply ({apply_id}) did not finish, probably because Home Assistant stopped in the middle of it. Entities, files, dashboards or helpers may be half-changed."
+    }
   }
 }

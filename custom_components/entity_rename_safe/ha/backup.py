@@ -32,7 +32,8 @@ class Manifest:
 
     ``status`` is ``in_progress`` until the apply ends as ``completed``, ``rolled_back`` or
     ``failed``. ``snapshots`` names the dashboard and helper snapshot files stored next to
-    the manifest.
+    the manifest. ``entity_registry_ids`` maps each old entity ID to its registry UUID, so an
+    interrupted apply can find where every entity ended up.
     """
 
     apply_id: str
@@ -41,6 +42,7 @@ class Manifest:
     files: list[FileRecord] = field(default_factory=list)
     snapshots: list[str] = field(default_factory=list)
     excluded_finding_ids: list[str] = field(default_factory=list)
+    entity_registry_ids: dict[str, str] = field(default_factory=dict)
     status: str = "in_progress"
     finished_at: str | None = None
 
@@ -55,6 +57,7 @@ class Manifest:
             ],
             "snapshots": list(self.snapshots),
             "excluded_finding_ids": list(self.excluded_finding_ids),
+            "entity_registry_ids": dict(self.entity_registry_ids),
             "status": self.status,
             "finished_at": self.finished_at,
         }
@@ -68,6 +71,7 @@ class Manifest:
             files=[FileRecord(**item) for item in data["files"]],
             snapshots=list(data["snapshots"]),
             excluded_finding_ids=list(data["excluded_finding_ids"]),
+            entity_registry_ids=dict(data.get("entity_registry_ids", {})),
             status=data["status"],
             finished_at=data["finished_at"],
         )
