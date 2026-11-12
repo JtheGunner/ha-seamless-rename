@@ -79,19 +79,25 @@ def _backup_name(path: str) -> str:
 
 
 def create_backup(work_dir: Path, apply_id: str, paths: Sequence[Path]) -> Path:
-    """Copy ``paths`` into ``<work_dir>/backups/<apply_id>/files`` and return that folder's parent.
+    """Copy ``paths`` into ``<work_dir>/backups/<apply_id>/files`` and return the backup folder.
 
-    Raises ``FileExistsError`` if a backup with this ID already exists and ``ValueError`` for
-    an ID that could point outside the backup folder.
+    The returned folder is ``<work_dir>/backups/<apply_id>``. Raises ``FileExistsError`` if a
+    backup with this ID already exists and ``ValueError`` for an ID that could point outside
+    the backup folder. If copying fails, the half-written folder is removed again so the same
+    ID can be used for a retry.
     """
     if not _APPLY_ID_RE.fullmatch(apply_id) or apply_id in {".", ".."}:
         raise ValueError(f"invalid apply id: {apply_id!r}")
     backup_dir = work_dir / "backups" / apply_id
     files_dir = backup_dir / FILES_DIR
     files_dir.parent.mkdir(parents=True, exist_ok=False)
-    files_dir.mkdir()
-    for path in paths:
-        shutil.copy2(path, files_dir / _backup_name(str(path)))
+    try:
+        files_dir.mkdir()
+        for path in paths:
+            shutil.copy2(path, files_dir / _backup_name(str(path)))
+    except BaseException:
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        raise
     return backup_dir
 
 
@@ -114,7 +120,10 @@ def restore_files(manifest: Manifest, backup_dir: Path) -> None:
     """
     restorations: list[tuple[Path, bytes]] = []
     for record in manifest.files:
-        data = (backup_dir / FILES_DIR / _backup_name(record.path)).read_bytes()
+        copy = backup_dir / FILES_DIR / _backup_name(record.path)
+        if not copy.is_file():
+            raise ValueError(f"backup copy of {record.path} is missing")
+        data = copy.read_bytes()
         if hashlib.sha256(data).hexdigest() != record.sha256_before:
             raise ValueError(f"backup of {record.path} failed sha256 verification")
         restorations.append((Path(record.path), data))

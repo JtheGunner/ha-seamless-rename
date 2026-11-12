@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -95,3 +96,53 @@ def test_manifest_json_roundtrip(tmp_path: Path) -> None:
     backup_dir = create_backup(tmp_path / "work", "a1", [path])
     write_manifest(backup_dir, manifest)
     assert read_manifest(backup_dir) == manifest
+
+
+@pytest.mark.parametrize("apply_id", ["../x", "a/b", "..", ".", "", "/abs", "a\\b", "x y"])
+def test_unsafe_apply_id_is_rejected_and_creates_nothing(tmp_path: Path, apply_id: str) -> None:
+    path = tmp_path / "f.yaml"
+    path.write_bytes(b"x")
+    work = tmp_path / "work"
+    with pytest.raises(ValueError, match="apply id"):
+        create_backup(work, apply_id, [path])
+    assert not work.exists()
+
+
+def test_damaged_second_backup_leaves_first_file_untouched(tmp_path: Path) -> None:
+    first = tmp_path / "one.yaml"
+    second = tmp_path / "two.yaml"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    manifest = _manifest([first, second])
+    backup_dir = create_backup(tmp_path / "work", "a1", [first, second])
+    first.write_bytes(b"changed-one")
+    second.write_bytes(b"changed-two")
+    damaged = backup_dir / "files" / hashlib.sha256(str(second).encode()).hexdigest()
+    damaged.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="sha256"):
+        restore_files(manifest, backup_dir)
+    assert first.read_bytes() == b"changed-one"
+    assert second.read_bytes() == b"changed-two"
+
+
+def test_failed_backup_is_cleaned_up_and_id_can_be_reused(tmp_path: Path) -> None:
+    good = tmp_path / "good.yaml"
+    good.write_bytes(b"x")
+    work = tmp_path / "work"
+    with pytest.raises(FileNotFoundError):
+        create_backup(work, "a1", [good, tmp_path / "missing.yaml"])
+    assert not (work / "backups" / "a1").exists()
+    assert create_backup(work, "a1", [good]).is_dir()
+
+
+def test_missing_backup_copy_raises_value_error_before_any_write(tmp_path: Path) -> None:
+    path = tmp_path / "f.yaml"
+    path.write_bytes(b"original")
+    manifest = _manifest([path])
+    backup_dir = create_backup(tmp_path / "work", "a1", [path])
+    path.write_bytes(b"changed")
+    for copy in (backup_dir / "files").iterdir():
+        copy.unlink()
+    with pytest.raises(ValueError, match="missing"):
+        restore_files(manifest, backup_dir)
+    assert path.read_bytes() == b"changed"
