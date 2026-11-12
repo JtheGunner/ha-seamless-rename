@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.check_config import async_check_ha_config_file
 from homeassistant.util import dt as dt_util
 
-from ..const import DEFAULT_EXCLUDES, WORK_DIR_NAME
+from ..const import CONF_EXTERNAL_PATHS, DEFAULT_EXCLUDES, DOMAIN, WORK_DIR_NAME
 from ..engine.ids import build_domain_pattern, is_valid_entity_id
 from ..engine.jinja_scan import find_pattern_warnings
 from ..engine.json_scan import rewrite_json
@@ -38,7 +38,7 @@ from .backup import (
     restore_files,
     write_manifest,
 )
-from .files import discover_yaml_files, sha256_of, write_atomic
+from .files import ExternalHit, discover_yaml_files, scan_external, sha256_of, write_atomic
 from .lovelace import (
     AdapterUnavailable,
     DashboardRef,
@@ -115,6 +115,7 @@ class PlanResult:
     warnings: list[str]
     summary: dict[str, Any]
     diff: str = ""
+    external: list[ExternalHit] = field(default_factory=list)
 
 
 @dataclass
@@ -152,6 +153,14 @@ def findings_response(findings: list[Finding]) -> list[dict[str, Any]]:
         }
         for finding in findings
     ]
+
+
+def _external_paths(hass: HomeAssistant) -> list[str]:
+    """Folders the user asked to be searched, from the integration's options."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        paths = entry.options.get(CONF_EXTERNAL_PATHS, [])
+        return [path for path in paths if isinstance(path, str) and path]
+    return []
 
 
 def _work_dir(hass: HomeAssistant) -> Path:
@@ -247,6 +256,9 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
             f"lovelace/{edit.ref.label}.json", render_config(edit.config), render_config(new_config)
         )
     helper_plans, helper_warnings = await helpers.scan_helpers(hass, mapping)
+    external, external_warnings = await hass.async_add_executor_job(
+        scan_external, _external_paths(hass), mapping
+    )
     for helper in helper_plans:
         new_options = rewrite_json(helper.options, helper.findings, set(DEFAULT_REPLACE))
         diff += render_diff(
@@ -256,7 +268,13 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
         )
 
     plan_id = f"plan-{uuid.uuid4().hex[:12]}"
-    warnings = [*preflight.warnings, *scan_warnings, *dashboard_warnings, *helper_warnings]
+    warnings = [
+        *preflight.warnings,
+        *scan_warnings,
+        *dashboard_warnings,
+        *helper_warnings,
+        *external_warnings,
+    ]
     summary: dict[str, Any] = {
         "files": {
             relative: {
@@ -279,6 +297,7 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
             }
             for plan in helper_plans
         },
+        "external": len(external),
         "renames": len(renames),
     }
     payload: dict[str, Any] = {
@@ -297,6 +316,7 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
             }
             for plan in helper_plans
         ],
+        "external": [asdict(hit) for hit in external],
         "lovelace": [
             {
                 "url_path": edit.ref.url_path,
@@ -311,7 +331,7 @@ async def plan(hass: HomeAssistant, request: PlanRequest) -> PlanResult:
     }
     payload["plan_hash"] = _canonical_hash(payload)
     await hass.async_add_executor_job(_write_plan_files, _work_dir(hass), plan_id, payload, diff)
-    return PlanResult(plan_id, renames, preflight.blockers, warnings, summary, diff)
+    return PlanResult(plan_id, renames, preflight.blockers, warnings, summary, diff, external)
 
 
 def _is_safe_relative(relative: str) -> bool:

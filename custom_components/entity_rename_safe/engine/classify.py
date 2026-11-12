@@ -21,12 +21,17 @@ def inside_jinja(
     )
 
 
+def _quoted_literal(value: str, old_id: str) -> bool:
+    """True if the ID appears as a quoted SQL string literal, as in ``entity_id = 'sensor.x'``."""
+    return f"'{old_id}'" in value or f'"{old_id}"' in value
+
+
 def classify(value: str, old_id: str, key: str | None, jinja: bool) -> Confidence:
     """Classify one hit of ``old_id`` inside the scalar ``value`` stored under ``key``."""
     if value.strip() == old_id:
         return Confidence.CERTAIN
     if key == "entity_id" and old_id in (part.strip() for part in value.split(",")):
         return Confidence.CERTAIN
-    if jinja:
+    if jinja or (key == "query" and _quoted_literal(value, old_id)):
         return Confidence.LIKELY
     return Confidence.UNCERTAIN

@@ -5,9 +5,13 @@ import hashlib
 import os
 import stat
 import tempfile
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
+
+from ..const import EXTERNAL_EXCLUDES, MAX_EXTERNAL_FILE_BYTES, MAX_EXTERNAL_HITS
+from ..engine.ids import build_token_pattern
 
 _YAML_SUFFIXES = (".yaml", ".yml")
 _NEW_FILE_MODE = 0o644
@@ -87,3 +91,81 @@ def write_atomic(path: Path, data: bytes) -> None:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(temp_name)
         raise
+
+
+_BINARY_PROBE = 8192
+_MAX_SNIPPET = 200
+
+
+@dataclass(frozen=True)
+class ExternalHit:
+    """A line in an external file that mentions an old entity ID. Reported, never edited."""
+
+    path: str
+    line: int
+    text: str
+
+
+def _read_regular_file(path: Path) -> bytes | None:
+    """Return a regular file's bytes, or None if it is not regular or too large.
+
+    Opens with ``O_NONBLOCK`` and ``O_NOFOLLOW`` so a FIFO or a swapped-in symlink cannot
+    block or redirect the read, and reads at most one byte past the size cap.
+    """
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        if path.is_symlink():
+            return None
+        raise
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            return None
+        data = handle.read(MAX_EXTERNAL_FILE_BYTES + 1)
+    return None if len(data) > MAX_EXTERNAL_FILE_BYTES else data
+
+
+def scan_external(
+    paths: Collection[str], mapping: Mapping[str, str]
+) -> tuple[list[ExternalHit], list[str]]:
+    """Search the given folders for the old IDs in plain text; return hits and warnings.
+
+    Nothing is ever written. Only regular files are read, never symlinks, FIFOs or sockets.
+    Binary files, files over the size cap, excluded names (``EXTERNAL_EXCLUDES``) and tool
+    folders are skipped, and the result is capped.
+    """
+    pattern = build_token_pattern(mapping)
+    hits: list[ExternalHit] = []
+    warnings: list[str] = []
+    for configured in paths:
+        root = Path(configured)
+        if not root.is_dir():
+            warnings.append(f"external path {configured} is not a folder and was skipped")
+            continue
+        for directory, dirnames, filenames in os.walk(root, followlinks=False):
+            dirnames[:] = sorted(
+                name for name in dirnames if not _is_excluded((name,), EXTERNAL_EXCLUDES)
+            )
+            for name in sorted(filenames):
+                if _is_excluded((name,), EXTERNAL_EXCLUDES):
+                    continue
+                file = Path(directory) / name
+                try:
+                    data = _read_regular_file(file)
+                except OSError as error:
+                    warnings.append(f"external file {file} could not be read ({error})")
+                    continue
+                if data is None:
+                    continue
+                if b"\0" in data[:_BINARY_PROBE]:
+                    continue
+                for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+                    if pattern.search(line):
+                        hits.append(ExternalHit(str(file), number, line.strip()[:_MAX_SNIPPET]))
+                        if len(hits) >= MAX_EXTERNAL_HITS:
+                            warnings.append(
+                                f"more than {MAX_EXTERNAL_HITS} external hits; the list is cut off"
+                            )
+                            return hits, warnings
+    return hits, warnings
