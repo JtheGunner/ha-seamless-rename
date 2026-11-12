@@ -195,6 +195,29 @@ test("backend errors are shown instead of thrown", async () => {
   assert.equal(find(panel, "error").textContent, "boom");
 });
 
+test("no tab renders stray null text", async () => {
+  const { panel } = mount({ history: () => ({ history: [] }), plan: () => plan() });
+  const noNull = () => assert.doesNotMatch(panel.textContent, /null|undefined/);
+  noNull();
+  await find(panel, "tab-bulk").fire("click");
+  noNull();
+  await find(panel, "tab-history").fire("click");
+  noNull();
+  await find(panel, "tab-single").fire("click");
+  await previewSingle(panel);
+  noNull();
+});
+
+test("history shows a readable timestamp", async () => {
+  const created = "2026-11-12T20:10:03.763221+00:00";
+  const { panel } = mount({
+    history: () => ({ history: [{ apply_id: "a", created_at: created, status: "undone", renames: [] }] }),
+  });
+  await find(panel, "tab-history").fire("click");
+  const cell = find(panel, "history-row").querySelector("td");
+  assert.equal(cell.textContent, new Date(created).toLocaleString());
+});
+
 test("parseCsv skips the header and blank or malformed lines", () => {
   assert.deepEqual(parseCsv("from,to\n\nsensor.a;sensor.b\nbroken\nsensor.c\tsensor.d\r\n"), [
     { from: "sensor.a", to: "sensor.b" },

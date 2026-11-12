@@ -10,21 +10,68 @@ const OBJECT_ID = "[a-z0-9]+(?:_[a-z0-9]+)*";
 const ENTITY_ID_SHAPE = new RegExp(`^${OBJECT_ID}\\.${OBJECT_ID}$`);
 
 const STYLE = `
-  :host, seamless-rename-panel { display: block; padding: 16px; color: var(--primary-text-color); }
-  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  :host, seamless-rename-panel {
+    display: block; min-height: 100%; box-sizing: border-box;
+    background: var(--primary-background-color); color: var(--primary-text-color);
+    font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif);
+  }
+  .header {
+    display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px;
+    background: var(--app-header-background-color, var(--primary-color));
+    color: var(--app-header-text-color, var(--text-primary-color, #fff));
+    font-size: 20px; font-weight: 500;
+  }
+  .page { max-width: 880px; margin: 0 auto; padding: 16px; }
+  .tabs {
+    display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 16px;
+    background: var(--secondary-background-color); border-radius: 12px;
+  }
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 16px;
+    border: 1px solid var(--divider-color); background: var(--card-background-color);
+    color: var(--primary-text-color);
+  }
+  button:hover:not(:disabled) { border-color: var(--primary-color); }
+  button:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--primary-color); outline-offset: 1px;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .tabs button { border-color: transparent; background: transparent; }
   .tabs button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-  .card { border: 1px solid var(--divider-color); border-radius: 8px; padding: 12px; margin: 12px 0; }
-  .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; max-width: 480px; }
+  button.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
+  button.danger { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
+  .card {
+    background: var(--card-background-color); border: 1px solid var(--divider-color);
+    border-radius: var(--ha-card-border-radius, 12px); padding: 16px; margin: 16px 0;
+  }
+  .card > :first-child { margin-top: 0; }
+  .hint { color: var(--secondary-text-color); margin: 0 0 8px; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; font-weight: 500; }
+  input, textarea {
+    font: inherit; box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--divider-color); background: var(--card-background-color);
+    color: var(--primary-text-color);
+  }
+  textarea { min-height: 96px; resize: vertical; }
+  .actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
   .error, .blocker { color: var(--error-color, #db4437); }
+  .error:empty { display: none; }
+  .error { margin: 8px 0; }
   .warning { color: var(--warning-color, #ffa600); }
   .collision td { background: color-mix(in srgb, var(--error-color, #db4437) 15%, transparent); }
-  .badge { border-radius: 4px; padding: 0 6px; margin: 0 6px; font-size: 0.8em; }
+  .finding { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .finding input { width: auto; }
+  .badge { border-radius: 12px; padding: 2px 8px; font-size: 0.8em; }
   .badge-certain { background: var(--success-color, #43a047); color: #fff; }
   .badge-likely { background: var(--info-color, #039be5); color: #fff; }
   .badge-uncertain { background: var(--warning-color, #ffa600); color: #000; }
-  pre { overflow: auto; max-height: 400px; }
-  table { border-collapse: collapse; }
-  td, th { padding: 2px 8px; text-align: left; }
+  pre { overflow: auto; max-height: 400px; background: var(--secondary-background-color); padding: 12px; border-radius: 8px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th { color: var(--secondary-text-color); font-weight: 500; }
+  td, th { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--divider-color); }
+  tbody tr:hover td { background: var(--secondary-background-color); }
+  @media (max-width: 600px) { .page { padding: 8px; } .tabs { display: flex; } .tabs button { flex: 1; padding: 8px; } }
 `;
 
 /** Create an element; ``on*`` props are listeners, ``value``/``checked``/``disabled`` properties. */
@@ -68,6 +115,12 @@ export function validateNewId(from, to, knownIds) {
   if (from === to) return "The new ID equals the old one.";
   if (knownIds.has(to)) return "This entity ID already exists.";
   return "";
+}
+
+/** Format an ISO timestamp in the browser locale; unparseable values are shown as received. */
+export function formatTimestamp(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value ?? "") : date.toLocaleString();
 }
 
 /** Group plan findings by the file, dashboard or helper they belong to. */
@@ -216,15 +269,19 @@ export class SeamlessRenamePanel extends HTMLElement {
       h("div", { class: "tabs" }, ...this._tabs()),
       state.error ? h("div", { class: "error", "data-test": "error" }, state.error) : null,
       state.forceFor
-        ? h("button", { "data-test": "force-undo", onclick: () => this._undo(state.forceFor, true) },
+        ? h("button", { class: "danger", "data-test": "force-undo", onclick: () => this._undo(state.forceFor, true) },
             "Force undo (overwrite later edits)")
         : null,
       state.tab === "single" ? this._singleTab() : null,
       state.tab === "bulk" ? this._bulkTab() : null,
       state.tab === "history" ? this._historyTab() : null,
       state.applied ? this._appliedCard(state.applied) : null,
-    ];
-    this.replaceChildren(h("style", {}, STYLE), ...body);
+    ].filter((node) => node !== null);
+    this.replaceChildren(
+      h("style", {}, STYLE),
+      h("div", { class: "header" }, "Seamless Rename"),
+      h("div", { class: "page" }, ...body),
+    );
   }
 
   _tabs() {
@@ -262,29 +319,36 @@ export class SeamlessRenamePanel extends HTMLElement {
     const { from, to, busy } = this._state;
     const ids = [...this._knownIds()].sort();
     return h("div", {},
-      h("datalist", { id: "seamless-rename-ids" }, ...ids.map((id) => h("option", { value: id }))),
-      this._field("Entity to rename", "from", { list: "seamless-rename-ids" }),
-      this._field("New entity ID", "to"),
-      h("div", { class: "error", "data-test": "validation" }, validateNewId(from, to, this._knownIds())),
-      h("button", { "data-test": "preview", disabled: busy || !from || !to, onclick: () => this._previewSingle() },
-        "Preview"),
+      h("div", { class: "card" },
+        h("datalist", { id: "seamless-rename-ids" }, ...ids.map((id) => h("option", { value: id }))),
+        this._field("Entity to rename", "from", { list: "seamless-rename-ids" }),
+        this._field("New entity ID", "to"),
+        h("div", { class: "error", "data-test": "validation" }, validateNewId(from, to, this._knownIds())),
+        h("div", { class: "actions" },
+          h("button", {
+            class: "primary", "data-test": "preview", disabled: busy || !from || !to,
+            onclick: () => this._previewSingle(),
+          }, "Preview"))),
       this._state.plan ? this._planCard(this._state.plan) : null);
   }
 
   _bulkTab() {
     const { busy } = this._state;
     return h("div", {},
-      h("p", {}, "Use a pattern (regular expression on the entity ID) or paste from,to lines."),
-      this._field("Match", "match"),
-      this._field("Replace", "replace"),
-      this._field("Domain (optional)", "domain"),
-      h("label", { class: "field" }, "CSV (from,to per line; overrides the pattern)",
-        h("textarea", {
-          "data-test": "input-csv",
-          value: this._state.csv,
-          oninput: (event) => { this._state.csv = event.target.value; },
-        })),
-      h("button", { "data-test": "preview", disabled: busy, onclick: () => this._previewBulk() }, "Preview"),
+      h("div", { class: "card" },
+        h("p", { class: "hint" }, "Use a pattern (regular expression on the entity ID) or paste from,to lines."),
+        this._field("Match", "match"),
+        this._field("Replace", "replace"),
+        this._field("Domain (optional)", "domain"),
+        h("label", { class: "field" }, "CSV (from,to per line; overrides the pattern)",
+          h("textarea", {
+            "data-test": "input-csv",
+            value: this._state.csv,
+            oninput: (event) => { this._state.csv = event.target.value; },
+          })),
+        h("div", { class: "actions" },
+          h("button", { class: "primary", "data-test": "preview", disabled: busy, onclick: () => this._previewBulk() },
+            "Preview"))),
       this._state.plan ? this._planCard(this._state.plan) : null);
   }
 
@@ -312,21 +376,22 @@ export class SeamlessRenamePanel extends HTMLElement {
             `${plan.external.length} reference(s) outside the configuration are listed but not changed.`)
         : null,
       h("details", {}, h("summary", {}, "Full diff"), h("pre", { "data-test": "diff" }, plan.diff ?? "")),
-      h("button", { "data-test": "apply", disabled: busy || blocked, onclick: () => this._apply() },
-        "Apply selected changes"));
+      h("div", { class: "actions" },
+        h("button", { class: "primary", "data-test": "apply", disabled: busy || blocked, onclick: () => this._apply() },
+          "Apply selected changes")));
   }
 
   _renamesTable(plan) {
     const isCollision = (rename) =>
       plan.blockers.some((text) => text.startsWith(`${rename.from}:`) || text.startsWith(`${rename.to}:`));
-    return h("table", { "data-test": "renames-table" },
+    return h("div", { class: "table-wrap" }, h("table", { "data-test": "renames-table" },
       h("tr", {}, h("th", {}, "From"), h("th", {}, "To")),
       ...plan.renames.map((rename) =>
         h("tr", {
           "data-test": "rename-row",
           class: isCollision(rename) ? "collision" : "",
           "data-collision": isCollision(rename) ? "true" : "false",
-        }, h("td", {}, rename.from), h("td", {}, rename.to))));
+        }, h("td", {}, rename.from), h("td", {}, rename.to)))));
   }
 
   _findingRow(finding, checked) {
@@ -353,24 +418,27 @@ export class SeamlessRenamePanel extends HTMLElement {
         : null,
       ...result.warnings.map((text) => h("p", { class: "warning" }, text)),
       result.status === "completed"
-        ? h("button", { "data-test": "undo", onclick: () => this._undo(result.apply_id) }, "Undo")
+        ? h("button", { class: "danger", "data-test": "undo", onclick: () => this._undo(result.apply_id) }, "Undo")
         : null);
   }
 
   _historyTab() {
     const history = this._state.history;
-    if (history === null) return h("p", {}, "Loading…");
-    if (history.length === 0) return h("p", { "data-test": "history-empty" }, "No renames recorded yet.");
-    return h("table", { "data-test": "history-table" },
+    if (history === null) return h("p", { class: "hint" }, "Loading…");
+    if (history.length === 0) return h("p", { class: "hint", "data-test": "history-empty" }, "No renames recorded yet.");
+    return h("div", { class: "card table-wrap" }, h("table", { "data-test": "history-table" },
       h("tr", {}, h("th", {}, "When"), h("th", {}, "Renames"), h("th", {}, "Status"), h("th", {}, "")),
       ...history.map((item) =>
         h("tr", { "data-test": "history-row" },
-          h("td", {}, item.created_at),
+          h("td", {}, formatTimestamp(item.created_at)),
           h("td", {}, item.renames.map((r) => `${r.from} → ${r.to}`).join(", ")),
           h("td", {}, item.status),
           h("td", {}, item.status === "completed"
-            ? h("button", { "data-test": "undo", "data-id": item.apply_id, onclick: () => this._undo(item.apply_id) }, "Undo")
-            : null))));
+            ? h("button", {
+              class: "danger", "data-test": "undo", "data-id": item.apply_id,
+              onclick: () => this._undo(item.apply_id),
+            }, "Undo")
+            : null)))));
   }
 }
 

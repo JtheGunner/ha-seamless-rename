@@ -10,6 +10,8 @@ class FakeText {
   }
 }
 
+const toNode = (node) => (node instanceof FakeElement || node instanceof FakeText ? node : new FakeText(node));
+
 class FakeElement {
   constructor(tagName) {
     this.tagName = tagName.toUpperCase();
@@ -28,11 +30,12 @@ class FakeElement {
   getAttribute(name) {
     return this.attributes[name] ?? null;
   }
+  // Like a browser, anything that is not a node is converted to a text node (null → "null").
   append(...nodes) {
-    this.children.push(...nodes);
+    this.children.push(...nodes.map(toNode));
   }
   replaceChildren(...nodes) {
-    this.children = [...nodes];
+    this.children = nodes.map(toNode);
     this._text = null;
   }
   addEventListener(type, listener) {
