@@ -267,7 +267,7 @@ All releases are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## 📄 License
 
-[MIT](LICENSE)
+Released under the [MIT License](LICENSE).
 
 ---
 
