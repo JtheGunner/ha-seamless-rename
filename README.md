@@ -259,6 +259,12 @@ commands in the Development section before opening a pull request.
 
 ---
 
+## 📝 Changelog
+
+All releases are listed in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## 📄 License
 
 [MIT](LICENSE)
