@@ -41,3 +41,15 @@ ignore:
   - "CHANGELOG.md"
   - "LICENSE"
   - "CONTRIBUTING.md"
+
+# Without a mapping these two sections would link to dozens of files, because
+# their text names whole directories. Map them to the files they actually
+# describe, so only a change to one of those files asks for a docs update.
+mappings:
+  "#manual":
+    - "custom_components/seamless_rename/manifest.json"
+  "#-development":
+    - "pyproject.toml"
+    - "custom_components/seamless_rename/ha/api.py"
+    - "custom_components/seamless_rename/services.py"
+    - "custom_components/seamless_rename/websocket.py"
